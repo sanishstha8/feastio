@@ -1212,7 +1212,7 @@ function waiterTableModal() {
           </div>
           <button class="modal-close" onclick="closeModal('waiter-table-modal')">✕</button>
         </div>
-        <div class="modal-body" id="wtm-body"></div>
+        <div class="modal-body" id="wtm-body" style="padding-top:0"></div>
         <div class="modal-footer" id="wtm-footer">
           <button class="btn btn-outline" onclick="closeModal('waiter-table-modal')">Close</button>
         </div>
@@ -1227,24 +1227,72 @@ function waiterOpenTableModal(tableId) {
   if (!t) return;
 
   document.getElementById('wtm-title').textContent = `Table ${t.number}`;
-  document.getElementById('wtm-desc').textContent  = `${t.capacity} seats · ${t.status}`;
+  document.getElementById('wtm-desc').textContent  = `${t.capacity} seats`;
 
   const menuAvail = STATE.menuItems.filter(m => m.available);
 
+  // colour helpers
+  const statusColor = { available:'#16a34a', occupied:'#dc2626', reserved:'#d97706' };
+  const statusBg    = { available:'#f0fdf4', occupied:'#fef2f2', reserved:'#fffbeb' };
+  const sc = statusColor[t.status] || '#888';
+  const sb = statusBg[t.status]   || '#f9f9f9';
+
+  // build menu rows HTML (shared between new-order and add-items sections)
+  function menuRows(idPrefix) {
+    return menuAvail.map(item => `
+      <div class="wtm-menu-row" data-name="${item.name.toLowerCase()}"
+        style="display:flex;justify-content:space-between;align-items:center;
+               padding:0.5rem 0.6rem;background:var(--bg);border-radius:var(--radius)">
+        <div>
+          <div style="font-weight:500;font-size:var(--text-sm)">${item.name}</div>
+          <div style="font-size:0.75rem;color:var(--text-muted)">NRs ${parseFloat(item.price).toFixed(2)}</div>
+        </div>
+        <div id="${idPrefix}-ctrl-${item.id}">
+          <button class="btn btn-primary btn-sm"
+            onclick="wtmAddItem(${item.id}, ${item.price}, '${item.name.replace(/'/g,"\\'")}', '${idPrefix}')">Add</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
   document.getElementById('wtm-body').innerHTML = `
 
-    <!-- Status badge -->
-    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.5rem">
-      <span class="badge ${t.status==='available'?'badge-green':t.status==='occupied'?'badge-red':'badge-yellow'}"
-        style="font-size:0.85rem;padding:0.3rem 0.75rem">${t.status}</span>
-      ${order ? `<span class="badge badge-orange" style="font-size:0.85rem;padding:0.3rem 0.75rem">
-        Order #${order.id} · NRs ${parseFloat(order.total).toFixed(2)}</span>` : ''}
+    <!-- ── Top bar: status pill + change-status buttons ── -->
+    <div style="background:${sb};border-bottom:1px solid var(--border);
+                padding:0.75rem 1.25rem;display:flex;align-items:center;
+                justify-content:space-between;flex-wrap:wrap;gap:0.5rem">
+      <div style="display:flex;align-items:center;gap:0.5rem">
+        <span style="width:10px;height:10px;border-radius:50%;background:${sc};display:inline-block"></span>
+        <span style="font-weight:700;color:${sc};text-transform:capitalize">${t.status}</span>
+        ${order ? `<span style="font-size:0.75rem;color:var(--text-muted)">· Order #${order.id}</span>` : ''}
+      </div>
+      <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
+        <span style="font-size:0.75rem;color:var(--text-muted);align-self:center">Change status:</span>
+        ${t.status !== 'available' ? `
+          <button class="btn btn-sm" onclick="wtmChangeStatus(${t.id},'available')"
+            style="background:#f0fdf4;color:#16a34a;border:1px solid #16a34a;font-size:0.75rem;padding:0.2rem 0.6rem">
+            ✓ Available
+          </button>` : ''}
+        ${t.status !== 'reserved' ? `
+          <button class="btn btn-sm" onclick="wtmChangeStatus(${t.id},'reserved')"
+            style="background:#fffbeb;color:#d97706;border:1px solid #d97706;font-size:0.75rem;padding:0.2rem 0.6rem">
+            🔒 Reserved
+          </button>` : ''}
+        ${t.status !== 'occupied' ? `
+          <button class="btn btn-sm" onclick="wtmChangeStatus(${t.id},'occupied')"
+            style="background:#fef2f2;color:#dc2626;border:1px solid #dc2626;font-size:0.75rem;padding:0.2rem 0.6rem">
+            🔴 Occupied
+          </button>` : ''}
+      </div>
     </div>
 
+    <div style="padding:1rem 1.25rem">
+
     ${order ? `
-      <!-- EXISTING ORDER — show items + add more -->
+      <!-- ── EXISTING ORDER section ── -->
       <div style="margin-bottom:1rem">
-        <div style="font-size:var(--text-sm);font-weight:600;margin-bottom:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Current Order</div>
+        <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.08em;color:var(--text-muted);
+                    text-transform:uppercase;margin-bottom:0.6rem">Current Order</div>
         ${(order.items||[]).map(item => `
           <div class="order-item-row">
             <div style="flex:1">
@@ -1254,114 +1302,135 @@ function waiterOpenTableModal(tableId) {
             <span style="font-weight:600">NRs ${(parseFloat(item.price)*item.quantity).toFixed(2)}</span>
           </div>
         `).join('')}
-        <div class="order-total"><span>Current Total</span><span>NRs ${parseFloat(order.total).toFixed(2)}</span></div>
+        <div class="order-total">
+          <span>Current Total</span>
+          <span style="color:var(--orange);font-weight:800">NRs ${parseFloat(order.total).toFixed(2)}</span>
+        </div>
       </div>
 
-      <!-- Add more items to existing order -->
-      <div>
-        <div style="font-size:var(--text-sm);font-weight:600;margin-bottom:0.5rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Add More Items</div>
-        <div style="border:1px solid var(--border);border-radius:var(--radius);max-height:220px;overflow-y:auto;padding:0.5rem;display:flex;flex-direction:column;gap:0.3rem">
-          ${menuAvail.map(item => `
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:0.5rem;background:var(--bg);border-radius:var(--radius)">
-              <div>
-                <div style="font-weight:500;font-size:var(--text-sm)">${item.name}</div>
-                <div style="font-size:0.75rem;color:var(--text-muted)">NRs ${parseFloat(item.price).toFixed(2)}</div>
-              </div>
-              <div id="wtm-ctrl-${item.id}">
-                <button class="btn btn-primary btn-sm" onclick="wtmAddItem(${item.id}, ${item.price}, '${item.name.replace(/'/g,"\\'")}')">Add</button>
-              </div>
-            </div>
-          `).join('')}
-        </div>
-        <div id="wtm-add-summary" class="hidden" style="background:var(--bg);border-radius:var(--radius);padding:0.75rem;margin-top:0.5rem">
-          <div style="font-weight:600;font-size:var(--text-sm);margin-bottom:0.35rem">Adding to Order:</div>
-          <div id="wtm-add-items"></div>
-        </div>
-        <button class="btn btn-primary w-full" style="margin-top:0.75rem" onclick="wtmSubmitAddItems(${order.id}, ${tableId})">
-          ${icons.plus} Add Items to Order
-        </button>
+      <!-- ── Add more items ── -->
+      <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.08em;color:var(--text-muted);
+                  text-transform:uppercase;margin-bottom:0.5rem">Add More Items</div>
+      <input class="form-input" id="wtm-search-add" placeholder="🔍 Search menu..."
+        oninput="wtmFilterMenu('add')"
+        style="margin-bottom:0.5rem;width:100%;box-sizing:border-box">
+      <div id="wtm-menu-add"
+        style="border:1px solid var(--border);border-radius:var(--radius);
+               max-height:200px;overflow-y:auto;padding:0.4rem;
+               display:flex;flex-direction:column;gap:0.3rem">
+        ${menuRows('add')}
       </div>
+      <div id="wtm-add-summary" class="hidden"
+        style="background:var(--bg);border-radius:var(--radius);padding:0.75rem;margin-top:0.5rem">
+        <div style="font-weight:600;font-size:var(--text-sm);margin-bottom:0.35rem">Adding to order:</div>
+        <div id="wtm-add-items"></div>
+      </div>
+      <button class="btn btn-primary w-full" style="margin-top:0.75rem"
+        onclick="wtmSubmitAddItems(${order.id}, ${tableId})">
+        ${icons.plus} Add Items to Order
+      </button>
 
     ` : `
-      <!-- NO ORDER — create new one -->
-      <div style="margin-bottom:1rem">
-        ${t.status !== 'available' ? `
-          <div style="padding:0.6rem 1rem;background:#fffbeb;border:1px solid #d97706;border-radius:var(--radius);font-size:var(--text-sm);color:#92400e;margin-bottom:1rem">
-            ⚠️ Table is <strong>${t.status}</strong> — you can still create an order for it.
-          </div>
-        ` : ''}
-        <div style="font-size:var(--text-sm);font-weight:600;margin-bottom:0.5rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Select Items</div>
-        <div style="border:1px solid var(--border);border-radius:var(--radius);max-height:260px;overflow-y:auto;padding:0.5rem;display:flex;flex-direction:column;gap:0.3rem">
-          ${menuAvail.map(item => `
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:0.5rem;background:var(--bg);border-radius:var(--radius)">
-              <div>
-                <div style="font-weight:500;font-size:var(--text-sm)">${item.name}</div>
-                <div style="font-size:0.75rem;color:var(--text-muted)">NRs ${parseFloat(item.price).toFixed(2)}</div>
-              </div>
-              <div id="wtm-ctrl-${item.id}">
-                <button class="btn btn-primary btn-sm" onclick="wtmAddItem(${item.id}, ${item.price}, '${item.name.replace(/'/g,"\\'")}')">Add</button>
-              </div>
-            </div>
-          `).join('')}
-        </div>
-        <div id="wtm-add-summary" class="hidden" style="background:var(--bg);border-radius:var(--radius);padding:0.75rem;margin-top:0.5rem">
-          <div style="font-weight:600;font-size:var(--text-sm);margin-bottom:0.35rem">Order Summary:</div>
-          <div id="wtm-add-items"></div>
-          <div class="order-total" id="wtm-new-total"><span>Total</span><span>NRs 0.00</span></div>
-        </div>
+      <!-- ── NEW ORDER section ── -->
+      ${t.status !== 'available' ? `
+        <div style="padding:0.5rem 0.75rem;background:#fffbeb;border:1px solid #d97706;
+                    border-radius:var(--radius);font-size:var(--text-sm);color:#92400e;margin-bottom:0.75rem">
+          ⚠️ Table is <strong>${t.status}</strong> — you can still place an order.
+        </div>` : ''}
+
+      <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.08em;color:var(--text-muted);
+                  text-transform:uppercase;margin-bottom:0.5rem">Select Items</div>
+      <input class="form-input" id="wtm-search-new" placeholder="🔍 Search menu..."
+        oninput="wtmFilterMenu('new')"
+        style="margin-bottom:0.5rem;width:100%;box-sizing:border-box">
+      <div id="wtm-menu-new"
+        style="border:1px solid var(--border);border-radius:var(--radius);
+               max-height:240px;overflow-y:auto;padding:0.4rem;
+               display:flex;flex-direction:column;gap:0.3rem">
+        ${menuRows('new')}
+      </div>
+      <div id="wtm-add-summary" class="hidden"
+        style="background:var(--bg);border-radius:var(--radius);padding:0.75rem;margin-top:0.5rem">
+        <div style="font-weight:600;font-size:var(--text-sm);margin-bottom:0.35rem">Order Summary:</div>
+        <div id="wtm-add-items"></div>
+        <div class="order-total" id="wtm-new-total"><span>Total</span><span>NRs 0.00</span></div>
       </div>
     `}
+
+    </div>
   `;
 
-  // Update footer buttons based on state
   document.getElementById('wtm-footer').innerHTML = order ? `
     <button class="btn btn-outline" onclick="closeModal('waiter-table-modal')">Close</button>
   ` : `
     <button class="btn btn-outline" onclick="closeModal('waiter-table-modal')">Cancel</button>
-    <button class="btn btn-primary" onclick="wtmSubmitNewOrder(${tableId})">
-      ${icons.plus} Place Order
-    </button>
+    <button class="btn btn-primary" onclick="wtmSubmitNewOrder(${tableId})">${icons.plus} Place Order</button>
   `;
 
   wtmCart = {};
   openModal('waiter-table-modal');
 }
 
-// ── Waiter Table Modal Cart ───────────────────────────────────────────────────
+// ── Menu search filter ────────────────────────────────────────────────────────
+function wtmFilterMenu(prefix) {
+  const input = document.getElementById(`wtm-search-${prefix}`);
+  const menu  = document.getElementById(`wtm-menu-${prefix}`);
+  if (!input || !menu) return;
+  const q = input.value.toLowerCase().trim();
+  menu.querySelectorAll('.wtm-menu-row').forEach(row => {
+    const name = row.getAttribute('data-name') || '';
+    row.style.display = (!q || name.includes(q)) ? '' : 'none';
+  });
+}
+
+// ── Change table status ───────────────────────────────────────────────────────
+async function wtmChangeStatus(tableId, newStatus) {
+  try {
+    await api.patch(`/orders/tables/${tableId}/`, { status: newStatus });
+    const tables = await api.get('/orders/tables/');
+    STATE.tables = tables.results ?? tables;
+    toast(`Table marked as ${newStatus}`);
+    closeModal('waiter-table-modal');
+    renderWaiterView();
+  } catch { toast('Failed to update table status', 'error'); }
+}
+
+// ── Cart logic ────────────────────────────────────────────────────────────────
 let wtmCart = {};
 
-function wtmAddItem(itemId, price, name) {
+function wtmAddItem(itemId, price, name, prefix) {
   if (wtmCart[itemId]) wtmCart[itemId].qty++;
   else wtmCart[itemId] = { qty: 1, price: parseFloat(price), name };
-  const ctrl = document.getElementById(`wtm-ctrl-${itemId}`);
+  const ctrl = document.getElementById(`${prefix}-ctrl-${itemId}`);
   if (ctrl) {
     const qty = wtmCart[itemId].qty;
     ctrl.innerHTML = `
       <div style="display:flex;align-items:center;gap:0.3rem">
-        <button class="btn btn-outline btn-sm" onclick="wtmRemoveItem(${itemId})">-</button>
+        <button class="btn btn-outline btn-sm" onclick="wtmRemoveItem(${itemId},'${prefix}')">-</button>
         <span style="width:1.5rem;text-align:center;font-weight:600">${qty}</span>
-        <button class="btn btn-outline btn-sm" onclick="wtmAddItem(${itemId}, ${price}, '${name.replace(/'/g,"\\'")}')">+</button>
+        <button class="btn btn-outline btn-sm" onclick="wtmAddItem(${itemId},${price},'${name.replace(/'/g,"\'")}','${prefix}')">+</button>
       </div>`;
   }
   wtmUpdateSummary();
 }
 
-function wtmRemoveItem(itemId) {
+function wtmRemoveItem(itemId, prefix) {
   if (!wtmCart[itemId]) return;
   wtmCart[itemId].qty--;
   if (wtmCart[itemId].qty <= 0) delete wtmCart[itemId];
   const item = STATE.menuItems.find(m => m.id === itemId);
-  const ctrl = document.getElementById(`wtm-ctrl-${itemId}`);
+  const ctrl = document.getElementById(`${prefix}-ctrl-${itemId}`);
   if (ctrl) {
     if (!wtmCart[itemId]) {
-      ctrl.innerHTML = `<button class="btn btn-primary btn-sm" onclick="wtmAddItem(${itemId}, ${item?.price}, '${item?.name?.replace(/'/g,"\\'")}')">Add</button>`;
+      ctrl.innerHTML = `<button class="btn btn-primary btn-sm"
+        onclick="wtmAddItem(${itemId},${item?.price},'${item?.name?.replace(/'/g,"\'")}','${prefix}')">Add</button>`;
     } else {
       const qty = wtmCart[itemId].qty;
       ctrl.innerHTML = `
         <div style="display:flex;align-items:center;gap:0.3rem">
-          <button class="btn btn-outline btn-sm" onclick="wtmRemoveItem(${itemId})">-</button>
+          <button class="btn btn-outline btn-sm" onclick="wtmRemoveItem(${itemId},'${prefix}')">-</button>
           <span style="width:1.5rem;text-align:center;font-weight:600">${qty}</span>
-          <button class="btn btn-outline btn-sm" onclick="wtmAddItem(${itemId}, ${item?.price}, '${item?.name?.replace(/'/g,"\\'")}')">+</button>
+          <button class="btn btn-outline btn-sm" onclick="wtmAddItem(${itemId},${item?.price},'${item?.name?.replace(/'/g,"\'")}','${prefix}')">+</button>
         </div>`;
     }
   }
@@ -1377,7 +1446,7 @@ function wtmUpdateSummary() {
   summary?.classList.remove('hidden');
   let tot = 0;
   if (itemsDiv) {
-    itemsDiv.innerHTML = entries.map(([id, {qty, price, name}]) => {
+    itemsDiv.innerHTML = entries.map(([id,{qty,price,name}]) => {
       tot += qty * price;
       return `<div style="display:flex;justify-content:space-between;font-size:var(--text-sm);margin-bottom:0.2rem">
         <span>${qty}x ${name}</span><span>NRs ${(qty*price).toFixed(2)}</span></div>`;
@@ -1391,7 +1460,7 @@ async function wtmSubmitNewOrder(tableId) {
   try {
     await api.post('/orders/orders/', {
       table_id: parseInt(tableId),
-      items: Object.entries(wtmCart).map(([id, {qty}]) => ({ menu_item: parseInt(id), quantity: qty })),
+      items: Object.entries(wtmCart).map(([id,{qty}]) => ({ menu_item: parseInt(id), quantity: qty })),
     });
     const [orders, tables] = await Promise.all([api.get('/orders/orders/'), api.get('/orders/tables/')]);
     STATE.orders = orders.results ?? orders;
@@ -1400,10 +1469,8 @@ async function wtmSubmitNewOrder(tableId) {
     renderWaiterView();
     toast('Order placed successfully!');
   } catch(e) {
-    try {
-      const err = JSON.parse(e.message);
-      toast(Object.values(err).flat()[0] || 'Failed to place order', 'error');
-    } catch { toast('Failed to place order', 'error'); }
+    try { const err = JSON.parse(e.message); toast(Object.values(err).flat()[0] || 'Failed to place order', 'error'); }
+    catch { toast('Failed to place order', 'error'); }
   }
 }
 
@@ -1411,7 +1478,7 @@ async function wtmSubmitAddItems(orderId, tableId) {
   if (!Object.keys(wtmCart).length) { toast('Please select items to add', 'error'); return; }
   try {
     await api.post(`/orders/orders/${orderId}/add-items/`, {
-      items: Object.entries(wtmCart).map(([id, {qty}]) => ({ menu_item: parseInt(id), quantity: qty })),
+      items: Object.entries(wtmCart).map(([id,{qty}]) => ({ menu_item: parseInt(id), quantity: qty })),
     });
     const [orders, tables] = await Promise.all([api.get('/orders/orders/'), api.get('/orders/tables/')]);
     STATE.orders = orders.results ?? orders;
