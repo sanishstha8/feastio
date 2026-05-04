@@ -49,8 +49,7 @@ class CreateOrderSerializer(serializers.Serializer):
             table = Table.objects.get(pk=value)
         except Table.DoesNotExist:
             raise serializers.ValidationError("Table not found.")
-        if table.status == 'occupied':
-            raise serializers.ValidationError("Table is already occupied.")
+        # Allow orders for available, occupied, and reserved tables
         return value
 
     def create(self, validated_data):

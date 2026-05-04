@@ -1144,23 +1144,33 @@ function renderWaiterView() {
         <button class="btn btn-primary w-full" onclick="openWaiterOrderModal()">${icons.plus} New Order</button>
       </div>
     </div>
-    <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem">Tables</h2>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <h2 style="font-size:1rem;font-weight:600">Tables <span style="font-size:0.75rem;font-weight:400;color:var(--text-muted)">(tap a table to manage)</span></h2>
+      <button class="btn btn-outline btn-sm" onclick="loadStaffData()">${icons.refresh} Refresh</button>
+    </div>
     <div class="tables-grid" style="margin-bottom:1.5rem">
       ${STATE.tables.map(t => {
         const order = STATE.orders.find(o => o.table === t.id && o.status === 'active');
+        const colors = {
+          available: { bg: '#f0fdf4', border: '#16a34a', text: '#15803d' },
+          occupied:  { bg: '#fef2f2', border: '#dc2626', text: '#dc2626' },
+          reserved:  { bg: '#fffbeb', border: '#d97706', text: '#d97706' },
+        };
+        const c = colors[t.status] || colors.available;
         return `
-          <div class="table-card ${t.status}" style="text-align:center">
+          <div class="table-card" onclick="waiterOpenTableModal(${t.id})"
+            style="cursor:pointer;background:${c.bg};border:1.5px solid ${c.border};text-align:center">
             <div class="table-status-dot ${t.status==='available'?'dot-green':t.status==='occupied'?'dot-red':'dot-yellow'}" style="margin:0 auto 0.35rem"></div>
-            <div style="font-weight:700">Table ${t.number}</div>
-            <div style="font-size:0.75rem;color:var(--text-muted)">${t.capacity} seats</div>
-            ${order ? `<div style="font-size:0.75rem;color:var(--orange);margin-top:0.25rem">NRs ${parseFloat(order.total).toFixed(2)}</div>` : ''}
+            <div style="font-weight:700;color:${c.text}">Table ${t.number}</div>
+            <div style="font-size:0.75rem;color:${c.text};opacity:0.8">${t.capacity} seats</div>
+            <div style="font-size:0.7rem;margin-top:0.2rem;color:${c.text};opacity:0.7">${t.status}</div>
+            ${order ? `<div style="font-size:0.8rem;color:${c.text};font-weight:700;margin-top:0.3rem">NRs ${parseFloat(order.total).toFixed(2)}</div>` : ''}
           </div>
         `;
       }).join('')}
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
-      <h2 style="font-size:1rem;font-weight:600">Your Active Orders</h2>
-      <button class="btn btn-outline btn-sm" onclick="loadStaffData()">${icons.refresh} Refresh</button>
+      <h2 style="font-size:1rem;font-weight:600">Active Orders</h2>
     </div>
     <div class="orders-grid">
       ${active.length === 0 ? '<div class="empty-state"><p>No active orders</p></div>' :
@@ -1178,12 +1188,238 @@ function renderWaiterView() {
                 </div>
               `).join('')}
               <div class="order-total"><span>Total</span><span>NRs ${parseFloat(o.total).toFixed(2)}</span></div>
+              <div class="order-actions" style="margin-top:0.5rem">
+                <button class="btn btn-outline w-full btn-sm" onclick="waiterOpenTableModal(${o.table})">${icons.orders} Manage Table</button>
+              </div>
             </div>
           </div>
         `).join('')}
     </div>
     ${waiterOrderModal()}
+    ${waiterTableModal()}
   `;
+}
+
+// ── Waiter Table Modal ────────────────────────────────────────────────────────
+function waiterTableModal() {
+  return `
+    <div id="waiter-table-modal" class="modal-overlay hidden">
+      <div class="modal modal-lg">
+        <div class="modal-header">
+          <div>
+            <div class="modal-title" id="wtm-title">Table</div>
+            <div class="modal-desc" id="wtm-desc"></div>
+          </div>
+          <button class="modal-close" onclick="closeModal('waiter-table-modal')">✕</button>
+        </div>
+        <div class="modal-body" id="wtm-body"></div>
+        <div class="modal-footer" id="wtm-footer">
+          <button class="btn btn-outline" onclick="closeModal('waiter-table-modal')">Close</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function waiterOpenTableModal(tableId) {
+  const t     = STATE.tables.find(t => t.id === tableId);
+  const order = STATE.orders.find(o => o.table === tableId && o.status === 'active');
+  if (!t) return;
+
+  document.getElementById('wtm-title').textContent = `Table ${t.number}`;
+  document.getElementById('wtm-desc').textContent  = `${t.capacity} seats · ${t.status}`;
+
+  const menuAvail = STATE.menuItems.filter(m => m.available);
+
+  document.getElementById('wtm-body').innerHTML = `
+
+    <!-- Status badge -->
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.5rem">
+      <span class="badge ${t.status==='available'?'badge-green':t.status==='occupied'?'badge-red':'badge-yellow'}"
+        style="font-size:0.85rem;padding:0.3rem 0.75rem">${t.status}</span>
+      ${order ? `<span class="badge badge-orange" style="font-size:0.85rem;padding:0.3rem 0.75rem">
+        Order #${order.id} · NRs ${parseFloat(order.total).toFixed(2)}</span>` : ''}
+    </div>
+
+    ${order ? `
+      <!-- EXISTING ORDER — show items + add more -->
+      <div style="margin-bottom:1rem">
+        <div style="font-size:var(--text-sm);font-weight:600;margin-bottom:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Current Order</div>
+        ${(order.items||[]).map(item => `
+          <div class="order-item-row">
+            <div style="flex:1">
+              <div style="font-weight:500">${item.quantity}x ${item.menu_item_name}</div>
+              <span class="badge ${item.status==='ready'?'badge-green':item.status==='preparing'?'badge-blue':item.status==='served'?'badge-gray':'badge-yellow'}">${item.status}</span>
+            </div>
+            <span style="font-weight:600">NRs ${(parseFloat(item.price)*item.quantity).toFixed(2)}</span>
+          </div>
+        `).join('')}
+        <div class="order-total"><span>Current Total</span><span>NRs ${parseFloat(order.total).toFixed(2)}</span></div>
+      </div>
+
+      <!-- Add more items to existing order -->
+      <div>
+        <div style="font-size:var(--text-sm);font-weight:600;margin-bottom:0.5rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Add More Items</div>
+        <div style="border:1px solid var(--border);border-radius:var(--radius);max-height:220px;overflow-y:auto;padding:0.5rem;display:flex;flex-direction:column;gap:0.3rem">
+          ${menuAvail.map(item => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:0.5rem;background:var(--bg);border-radius:var(--radius)">
+              <div>
+                <div style="font-weight:500;font-size:var(--text-sm)">${item.name}</div>
+                <div style="font-size:0.75rem;color:var(--text-muted)">NRs ${parseFloat(item.price).toFixed(2)}</div>
+              </div>
+              <div id="wtm-ctrl-${item.id}">
+                <button class="btn btn-primary btn-sm" onclick="wtmAddItem(${item.id}, ${item.price}, '${item.name.replace(/'/g,"\\'")}')">Add</button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+        <div id="wtm-add-summary" class="hidden" style="background:var(--bg);border-radius:var(--radius);padding:0.75rem;margin-top:0.5rem">
+          <div style="font-weight:600;font-size:var(--text-sm);margin-bottom:0.35rem">Adding to Order:</div>
+          <div id="wtm-add-items"></div>
+        </div>
+        <button class="btn btn-primary w-full" style="margin-top:0.75rem" onclick="wtmSubmitAddItems(${order.id}, ${tableId})">
+          ${icons.plus} Add Items to Order
+        </button>
+      </div>
+
+    ` : `
+      <!-- NO ORDER — create new one -->
+      <div style="margin-bottom:1rem">
+        ${t.status !== 'available' ? `
+          <div style="padding:0.6rem 1rem;background:#fffbeb;border:1px solid #d97706;border-radius:var(--radius);font-size:var(--text-sm);color:#92400e;margin-bottom:1rem">
+            ⚠️ Table is <strong>${t.status}</strong> — you can still create an order for it.
+          </div>
+        ` : ''}
+        <div style="font-size:var(--text-sm);font-weight:600;margin-bottom:0.5rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Select Items</div>
+        <div style="border:1px solid var(--border);border-radius:var(--radius);max-height:260px;overflow-y:auto;padding:0.5rem;display:flex;flex-direction:column;gap:0.3rem">
+          ${menuAvail.map(item => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:0.5rem;background:var(--bg);border-radius:var(--radius)">
+              <div>
+                <div style="font-weight:500;font-size:var(--text-sm)">${item.name}</div>
+                <div style="font-size:0.75rem;color:var(--text-muted)">NRs ${parseFloat(item.price).toFixed(2)}</div>
+              </div>
+              <div id="wtm-ctrl-${item.id}">
+                <button class="btn btn-primary btn-sm" onclick="wtmAddItem(${item.id}, ${item.price}, '${item.name.replace(/'/g,"\\'")}')">Add</button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+        <div id="wtm-add-summary" class="hidden" style="background:var(--bg);border-radius:var(--radius);padding:0.75rem;margin-top:0.5rem">
+          <div style="font-weight:600;font-size:var(--text-sm);margin-bottom:0.35rem">Order Summary:</div>
+          <div id="wtm-add-items"></div>
+          <div class="order-total" id="wtm-new-total"><span>Total</span><span>NRs 0.00</span></div>
+        </div>
+      </div>
+    `}
+  `;
+
+  // Update footer buttons based on state
+  document.getElementById('wtm-footer').innerHTML = order ? `
+    <button class="btn btn-outline" onclick="closeModal('waiter-table-modal')">Close</button>
+  ` : `
+    <button class="btn btn-outline" onclick="closeModal('waiter-table-modal')">Cancel</button>
+    <button class="btn btn-primary" onclick="wtmSubmitNewOrder(${tableId})">
+      ${icons.plus} Place Order
+    </button>
+  `;
+
+  wtmCart = {};
+  openModal('waiter-table-modal');
+}
+
+// ── Waiter Table Modal Cart ───────────────────────────────────────────────────
+let wtmCart = {};
+
+function wtmAddItem(itemId, price, name) {
+  if (wtmCart[itemId]) wtmCart[itemId].qty++;
+  else wtmCart[itemId] = { qty: 1, price: parseFloat(price), name };
+  const ctrl = document.getElementById(`wtm-ctrl-${itemId}`);
+  if (ctrl) {
+    const qty = wtmCart[itemId].qty;
+    ctrl.innerHTML = `
+      <div style="display:flex;align-items:center;gap:0.3rem">
+        <button class="btn btn-outline btn-sm" onclick="wtmRemoveItem(${itemId})">-</button>
+        <span style="width:1.5rem;text-align:center;font-weight:600">${qty}</span>
+        <button class="btn btn-outline btn-sm" onclick="wtmAddItem(${itemId}, ${price}, '${name.replace(/'/g,"\\'")}')">+</button>
+      </div>`;
+  }
+  wtmUpdateSummary();
+}
+
+function wtmRemoveItem(itemId) {
+  if (!wtmCart[itemId]) return;
+  wtmCart[itemId].qty--;
+  if (wtmCart[itemId].qty <= 0) delete wtmCart[itemId];
+  const item = STATE.menuItems.find(m => m.id === itemId);
+  const ctrl = document.getElementById(`wtm-ctrl-${itemId}`);
+  if (ctrl) {
+    if (!wtmCart[itemId]) {
+      ctrl.innerHTML = `<button class="btn btn-primary btn-sm" onclick="wtmAddItem(${itemId}, ${item?.price}, '${item?.name?.replace(/'/g,"\\'")}')">Add</button>`;
+    } else {
+      const qty = wtmCart[itemId].qty;
+      ctrl.innerHTML = `
+        <div style="display:flex;align-items:center;gap:0.3rem">
+          <button class="btn btn-outline btn-sm" onclick="wtmRemoveItem(${itemId})">-</button>
+          <span style="width:1.5rem;text-align:center;font-weight:600">${qty}</span>
+          <button class="btn btn-outline btn-sm" onclick="wtmAddItem(${itemId}, ${item?.price}, '${item?.name?.replace(/'/g,"\\'")}')">+</button>
+        </div>`;
+    }
+  }
+  wtmUpdateSummary();
+}
+
+function wtmUpdateSummary() {
+  const summary  = document.getElementById('wtm-add-summary');
+  const itemsDiv = document.getElementById('wtm-add-items');
+  const totalDiv = document.getElementById('wtm-new-total');
+  const entries  = Object.entries(wtmCart);
+  if (!entries.length) { summary?.classList.add('hidden'); return; }
+  summary?.classList.remove('hidden');
+  let tot = 0;
+  if (itemsDiv) {
+    itemsDiv.innerHTML = entries.map(([id, {qty, price, name}]) => {
+      tot += qty * price;
+      return `<div style="display:flex;justify-content:space-between;font-size:var(--text-sm);margin-bottom:0.2rem">
+        <span>${qty}x ${name}</span><span>NRs ${(qty*price).toFixed(2)}</span></div>`;
+    }).join('');
+  }
+  if (totalDiv) totalDiv.innerHTML = `<span>Total</span><span>NRs ${tot.toFixed(2)}</span>`;
+}
+
+async function wtmSubmitNewOrder(tableId) {
+  if (!Object.keys(wtmCart).length) { toast('Please add at least one item', 'error'); return; }
+  try {
+    await api.post('/orders/orders/', {
+      table_id: parseInt(tableId),
+      items: Object.entries(wtmCart).map(([id, {qty}]) => ({ menu_item: parseInt(id), quantity: qty })),
+    });
+    const [orders, tables] = await Promise.all([api.get('/orders/orders/'), api.get('/orders/tables/')]);
+    STATE.orders = orders.results ?? orders;
+    STATE.tables = tables.results ?? tables;
+    closeModal('waiter-table-modal');
+    renderWaiterView();
+    toast('Order placed successfully!');
+  } catch(e) {
+    try {
+      const err = JSON.parse(e.message);
+      toast(Object.values(err).flat()[0] || 'Failed to place order', 'error');
+    } catch { toast('Failed to place order', 'error'); }
+  }
+}
+
+async function wtmSubmitAddItems(orderId, tableId) {
+  if (!Object.keys(wtmCart).length) { toast('Please select items to add', 'error'); return; }
+  try {
+    await api.post(`/orders/orders/${orderId}/add-items/`, {
+      items: Object.entries(wtmCart).map(([id, {qty}]) => ({ menu_item: parseInt(id), quantity: qty })),
+    });
+    const [orders, tables] = await Promise.all([api.get('/orders/orders/'), api.get('/orders/tables/')]);
+    STATE.orders = orders.results ?? orders;
+    STATE.tables = tables.results ?? tables;
+    closeModal('waiter-table-modal');
+    renderWaiterView();
+    toast('Items added to order!');
+  } catch { toast('Failed to add items', 'error'); }
 }
 
 function waiterOrderModal() {
