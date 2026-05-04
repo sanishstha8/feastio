@@ -132,3 +132,34 @@ class OrderViewSet(viewsets.ModelViewSet):
         item.status = new_status
         item.save()
         return Response(OrderItemSerializer(item).data)
+
+
+from .models import Payment
+from .serializers import PaymentSerializer, CreatePaymentSerializer
+
+class PaymentViewSet(viewsets.ModelViewSet):
+    queryset = Payment.objects.select_related('order__table').all()
+    serializer_class = PaymentSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        status_filter = self.request.query_params.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        return qs.order_by('-created_at')
+
+    def create(self, request, *args, **kwargs):
+        serializer = CreatePaymentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payment = serializer.save()
+        return Response(PaymentSerializer(payment).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['patch'], url_path='refund')
+    def refund(self, request, pk=None):
+        payment = self.get_object()
+        if request.user.role != 'manager':
+            return Response({'error': 'Only managers can refund payments'}, status=status.HTTP_403_FORBIDDEN)
+        payment.status = 'refunded'
+        payment.save()
+        return Response(PaymentSerializer(payment).data)

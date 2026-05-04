@@ -60,3 +60,32 @@ class OrderItem(models.Model):
 
     def __str__(self):
         return f"{self.quantity}x {self.menu_item.name} (Order #{self.order.id})"
+
+
+class Payment(models.Model):
+    class Method(models.TextChoices):
+        CASH = 'cash', 'Cash'
+        CARD = 'card', 'Card'
+        QR = 'qr', 'QR / Digital Wallet'
+
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        PAID = 'paid', 'Paid'
+        REFUNDED = 'refunded', 'Refunded'
+
+    order = models.OneToOneField(Order, on_delete=models.PROTECT, related_name='payment')
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    method = models.CharField(max_length=20, choices=Method.choices, default=Method.CASH)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    tip = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    discount = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    note = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    paid_at = models.DateTimeField(null=True, blank=True)
+
+    @property
+    def grand_total(self):
+        return self.amount + self.tip - self.discount
+
+    def __str__(self):
+        return f"Payment for Order #{self.order.id} — NRs {self.grand_total}"

@@ -1410,3 +1410,389 @@ document.addEventListener('DOMContentLoaded', () => {
   initLanding();
   checkAuth();
 });
+
+// ── Payment System ────────────────────────────────────────────────────────────
+
+// payment icon
+icons.payment = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>`;
+icons.qr = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="3" y="3" width="3" height="3" fill="currentColor"/><rect x="14" y="3" width="3" height="3" fill="currentColor"/><rect x="3" y="14" width="3" height="3" fill="currentColor"/><path d="M14 14h3v3h-3zM17 17h3v3h-3zM14 17h1M17 14h1"/></svg>`;
+
+// ── MANAGER: Add Payments nav item ───────────────────────────────────────────
+const _origRenderManagerShell = renderManagerShell;
+renderManagerShell = function() {
+  _origRenderManagerShell();
+  // inject payments nav button after reports
+  const nav = document.querySelector('.sidebar-nav');
+  if (nav && !nav.querySelector('[onclick="navigateTo(\'payments\')"]')) {
+    const btn = document.createElement('button');
+    btn.className = 'nav-item';
+    btn.setAttribute('onclick', "navigateTo('payments')");
+    btn.innerHTML = `${icons.payment} Payments`;
+    nav.appendChild(btn);
+  }
+  // register route
+  const _origNavigateTo = window.navigateTo;
+  window.navigateTo = function(page) {
+    if (page === 'payments') {
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      document.querySelector(`.nav-item[onclick="navigateTo('payments')"]`)?.classList.add('active');
+      renderPayments();
+    } else {
+      _origNavigateTo(page);
+    }
+  };
+};
+
+// ── Payments Page (Manager) ──────────────────────────────────────────────────
+async function renderPayments() {
+  let payments = [];
+  try {
+    const data = await api.get('/orders/payments/');
+    payments = data.results ?? data;
+  } catch { toast('Failed to load payments', 'error'); }
+
+  const paid      = payments.filter(p => p.status === 'paid');
+  const pending   = payments.filter(p => p.status === 'pending');
+  const refunded  = payments.filter(p => p.status === 'refunded');
+  const totalRev  = paid.reduce((s, p) => s + parseFloat(p.grand_total), 0);
+
+  // also get completed orders without payment for "Bill Due" section
+  let completedOrders = [];
+  try {
+    const data = await api.get('/orders/orders/?status=completed');
+    const allOrders = data.results ?? data;
+    completedOrders = allOrders.filter(o => !payments.find(p => p.order === o.id && p.status === 'paid'));
+  } catch {}
+
+  setInner(`
+    <div class="page-header">
+      <div><h1>Payments & Billing</h1><p>Manage bills, collect payments, generate QR codes</p></div>
+      <button class="btn btn-outline btn-sm" onclick="renderPayments()">${icons.refresh} Refresh</button>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid" style="margin-bottom:1.5rem">
+      <div class="stat-card">
+        <div class="stat-label">Total Collected</div>
+        <div class="stat-value" style="color:var(--green)">NRs ${totalRev.toFixed(2)}</div>
+        <div class="stat-sub">${paid.length} payments</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Bills Due</div>
+        <div class="stat-value" style="color:var(--orange)">${completedOrders.length}</div>
+        <div class="stat-sub">Awaiting payment</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Refunded</div>
+        <div class="stat-value" style="color:var(--red, #dc2626)">${refunded.length}</div>
+        <div class="stat-sub">Total refunds</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Avg Bill</div>
+        <div class="stat-value" style="color:var(--blue)">${paid.length ? 'NRs ' + (totalRev/paid.length).toFixed(2) : '—'}</div>
+        <div class="stat-sub">Per completed order</div>
+      </div>
+    </div>
+
+    <!-- Bills Due -->
+    ${completedOrders.length > 0 ? `
+      <div style="margin-bottom:0.75rem;display:flex;align-items:center;justify-content:space-between">
+        <h2 style="font-size:1.05rem;font-weight:700;color:var(--orange)">⚡ Bills Due — Collect Payment</h2>
+      </div>
+      <div class="orders-grid" style="margin-bottom:2rem">
+        ${completedOrders.map(o => `
+          <div class="order-card" style="border:1.5px solid var(--orange)">
+            <div class="order-card-header">
+              <span style="font-weight:700">Table ${o.table_number} — Order #${o.id}</span>
+              <span style="font-size:0.75rem;color:var(--text-muted)">${new Date(o.created_at).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>
+            </div>
+            <div class="order-card-body">
+              ${(o.items||[]).map(item => `
+                <div class="order-item-row">
+                  <span>${item.quantity}x ${item.menu_item_name}</span>
+                  <span>NRs ${(parseFloat(item.price)*item.quantity).toFixed(2)}</span>
+                </div>
+              `).join('')}
+              <div class="order-total"><span>Bill Total</span><span style="color:var(--orange);font-size:1.1rem">NRs ${parseFloat(o.total).toFixed(2)}</span></div>
+              <div class="order-actions" style="flex-direction:column;gap:0.5rem">
+                <button class="btn btn-primary w-full" onclick="openPaymentModal(${o.id}, ${o.total}, ${o.table_number})">${icons.payment} Collect Payment</button>
+                <button class="btn btn-outline w-full" style="font-size:0.8rem" onclick="openQRModal(${o.id}, ${o.total}, ${o.table_number})">${icons.qr} Show QR Code</button>
+              </div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    ` : `<div style="text-align:center;padding:1.5rem;background:var(--green-bg,#f0fdf4);border:1px solid var(--green);border-radius:var(--radius);margin-bottom:2rem;color:var(--green)">✓ All bills are settled!</div>`}
+
+    <!-- Payment History -->
+    <div style="margin-bottom:0.75rem"><h2 style="font-size:1.05rem;font-weight:700">Payment History</h2></div>
+    <div class="card">
+      <div class="card-content">
+        ${paid.length === 0 && refunded.length === 0 ? '<div class="empty-state"><p>No payments recorded yet</p></div>' :
+          [...paid, ...refunded].sort((a,b) => new Date(b.created_at) - new Date(a.created_at)).map(p => `
+            <div class="order-item-row">
+              <div>
+                <div style="font-weight:600">Order #${p.order} — Table ${p.table_number}</div>
+                <div style="font-size:0.75rem;color:var(--text-muted)">${new Date(p.created_at).toLocaleString()} · ${p.method.toUpperCase()}</div>
+                ${p.tip > 0 ? `<div style="font-size:0.75rem;color:var(--green)">Tip: NRs ${parseFloat(p.tip).toFixed(2)}</div>` : ''}
+                ${p.discount > 0 ? `<div style="font-size:0.75rem;color:var(--blue)">Discount: NRs ${parseFloat(p.discount).toFixed(2)}</div>` : ''}
+                ${p.note ? `<div style="font-size:0.75rem;color:var(--text-muted);font-style:italic">"${p.note}"</div>` : ''}
+              </div>
+              <div style="text-align:right">
+                <div style="font-weight:700;font-size:1rem">NRs ${parseFloat(p.grand_total).toFixed(2)}</div>
+                <span class="badge ${p.status === 'paid' ? 'badge-green' : 'badge-red'}">${p.status}</span>
+                ${p.status === 'paid' ? `<div style="margin-top:0.25rem"><button class="btn btn-outline btn-sm" style="font-size:0.7rem;padding:0.2rem 0.5rem" onclick="refundPayment(${p.id})">Refund</button></div>` : ''}
+              </div>
+            </div>
+          `).join('')
+        }
+      </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="payment-modal" class="modal-overlay hidden">
+      <div class="modal">
+        <div class="modal-header">
+          <div><div class="modal-title" id="pm-title">Collect Payment</div><div class="modal-desc" id="pm-desc"></div></div>
+          <button class="modal-close" onclick="closeModal('payment-modal')">✕</button>
+        </div>
+        <div class="modal-body" id="pm-body"></div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closeModal('payment-modal')">Cancel</button>
+          <button class="btn btn-primary" onclick="submitPayment()">${icons.payment} Confirm Payment</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="qr-modal" class="modal-overlay hidden">
+      <div class="modal" style="max-width:420px">
+        <div class="modal-header">
+          <div><div class="modal-title">QR Payment Code</div><div class="modal-desc" id="qr-desc"></div></div>
+          <button class="modal-close" onclick="closeModal('qr-modal')">✕</button>
+        </div>
+        <div class="modal-body" id="qr-body" style="text-align:center"></div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closeModal('qr-modal')">Close</button>
+          <button class="btn btn-primary" onclick="markQRPaid()">${icons.check} Mark as Paid</button>
+        </div>
+      </div>
+    </div>
+  `);
+}
+
+let _paymentOrderId = null;
+let _paymentAmount  = null;
+
+function openPaymentModal(orderId, amount, tableNum) {
+  _paymentOrderId = orderId;
+  _paymentAmount  = parseFloat(amount);
+  document.getElementById('pm-title').textContent = `Collect Payment — Table ${tableNum}`;
+  document.getElementById('pm-desc').textContent  = `Order #${orderId}`;
+  document.getElementById('pm-body').innerHTML = `
+    <div style="background:var(--bg);border-radius:var(--radius);padding:1rem;margin-bottom:1rem;text-align:center">
+      <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.25rem">Bill Amount</div>
+      <div style="font-size:2rem;font-weight:800;color:var(--orange)">NRs ${_paymentAmount.toFixed(2)}</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Payment Method</label>
+      <div style="display:flex;gap:0.5rem">
+        <button id="pm-cash" class="btn btn-primary w-full" onclick="selectPayMethod('cash')">💵 Cash</button>
+        <button id="pm-card" class="btn btn-outline w-full" onclick="selectPayMethod('card')">💳 Card</button>
+        <button id="pm-qr"   class="btn btn-outline w-full" onclick="selectPayMethod('qr')">${icons.qr} QR</button>
+      </div>
+      <input type="hidden" id="pm-method" value="cash">
+    </div>
+    <div class="form-grid-2">
+      <div class="form-group">
+        <label class="form-label">Tip (NRs)</label>
+        <input class="form-input" type="number" id="pm-tip" value="0" min="0" step="1" oninput="updateGrandTotal()">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Discount (NRs)</label>
+        <input class="form-input" type="number" id="pm-discount" value="0" min="0" step="1" oninput="updateGrandTotal()">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Note (optional)</label>
+      <input class="form-input" id="pm-note" placeholder="e.g. paid by card ending 4242">
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:0.75rem;background:var(--bg);border-radius:var(--radius);border:1px solid var(--border)">
+      <span style="font-weight:600">Grand Total</span>
+      <span style="font-size:1.3rem;font-weight:800;color:var(--green)" id="pm-grand-total">NRs ${_paymentAmount.toFixed(2)}</span>
+    </div>
+  `;
+  openModal('payment-modal');
+}
+
+function selectPayMethod(method) {
+  document.getElementById('pm-method').value = method;
+  ['cash','card','qr'].forEach(m => {
+    const btn = document.getElementById(`pm-${m}`);
+    if (btn) btn.className = m === method ? 'btn btn-primary w-full' : 'btn btn-outline w-full';
+  });
+}
+
+function updateGrandTotal() {
+  const tip      = parseFloat(document.getElementById('pm-tip')?.value) || 0;
+  const discount = parseFloat(document.getElementById('pm-discount')?.value) || 0;
+  const grand    = _paymentAmount + tip - discount;
+  const el = document.getElementById('pm-grand-total');
+  if (el) el.textContent = `NRs ${Math.max(0, grand).toFixed(2)}`;
+}
+
+async function submitPayment() {
+  const method   = document.getElementById('pm-method').value;
+  const tip      = parseFloat(document.getElementById('pm-tip').value) || 0;
+  const discount = parseFloat(document.getElementById('pm-discount').value) || 0;
+  const note     = document.getElementById('pm-note').value;
+  try {
+    await api.post('/orders/payments/', {
+      order_id: _paymentOrderId,
+      method, tip, discount, note,
+    });
+    closeModal('payment-modal');
+    toast('Payment recorded successfully!');
+    renderPayments();
+  } catch(e) {
+    try { const err = JSON.parse(e.message); toast(Object.values(err).flat()[0] || 'Payment failed', 'error'); }
+    catch { toast('Failed to record payment', 'error'); }
+  }
+}
+
+// QR modal
+let _qrOrderId = null, _qrAmount = null;
+
+function openQRModal(orderId, amount, tableNum) {
+  _qrOrderId = orderId;
+  _qrAmount  = parseFloat(amount);
+  document.getElementById('qr-desc').textContent = `Table ${tableNum} — Order #${orderId}`;
+  document.getElementById('qr-body').innerHTML = `
+    <div style="margin-bottom:1rem">
+      <div style="font-size:0.85rem;color:var(--text-muted)">Amount Due</div>
+      <div style="font-size:2rem;font-weight:800;color:var(--orange)">NRs ${_qrAmount.toFixed(2)}</div>
+    </div>
+    <div id="qr-canvas-container" style="display:flex;justify-content:center;margin:1rem 0"></div>
+    <p style="font-size:0.8rem;color:var(--text-muted);margin-top:0.5rem">Scan to pay via eSewa / Khalti / IME Pay</p>
+  `;
+  // generate QR using free API (no library needed)
+  const qrData = encodeURIComponent(`FEASTIO|Order#${orderId}|Table${tableNum}|NRs${_qrAmount.toFixed(2)}`);
+  const img = document.createElement('img');
+  img.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${qrData}&bgcolor=ffffff&color=1a1a1a&margin=10`;
+  img.style.cssText = 'width:200px;height:200px;border-radius:8px;border:2px solid var(--border)';
+  img.alt = 'QR Code for payment';
+  document.getElementById('qr-canvas-container').appendChild(img);
+  openModal('qr-modal');
+}
+
+async function markQRPaid() {
+  try {
+    await api.post('/orders/payments/', {
+      order_id: _qrOrderId,
+      method: 'qr',
+      tip: 0, discount: 0, note: 'Paid via QR',
+    });
+    closeModal('qr-modal');
+    toast('QR payment marked as paid!');
+    renderPayments();
+  } catch { toast('Failed to mark as paid', 'error'); }
+}
+
+async function refundPayment(paymentId) {
+  if (!confirm('Refund this payment?')) return;
+  try {
+    await api.patch(`/orders/payments/${paymentId}/refund/`);
+    toast('Payment refunded');
+    renderPayments();
+  } catch { toast('Failed to refund', 'error'); }
+}
+
+// ── WAITER: Payment button on orders ─────────────────────────────────────────
+const _origRenderWaiterView = renderWaiterView;
+renderWaiterView = function() {
+  _origRenderWaiterView();
+  // After render, patch each order card to show bill + QR button for completed orders
+  injectWaiterPaymentButtons();
+};
+
+async function injectWaiterPaymentButtons() {
+  // fetch completed orders awaiting payment
+  try {
+    const data = await api.get('/orders/orders/?status=completed');
+    const completed = data.results ?? data;
+    const paymentsData = await api.get('/orders/payments/');
+    const payments = paymentsData.results ?? paymentsData;
+    const unpaid = completed.filter(o => !payments.find(p => p.order === o.id && p.status === 'paid'));
+    if (unpaid.length === 0) return;
+    const view = document.getElementById('staff-view');
+    if (!view) return;
+    const section = document.createElement('div');
+    section.style.cssText = 'margin-top:1.5rem';
+    section.innerHTML = `
+      <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;color:var(--orange)">⚡ Bills Ready for Payment</h2>
+      <div class="orders-grid">
+        ${unpaid.map(o => `
+          <div class="order-card" style="border:1.5px solid var(--orange)">
+            <div class="order-card-header">
+              <span style="font-weight:700">Table ${o.table_number} — Order #${o.id}</span>
+              <span class="badge badge-orange">Bill Due</span>
+            </div>
+            <div class="order-card-body">
+              ${(o.items||[]).map(item => `
+                <div class="order-item-row">
+                  <span>${item.quantity}x ${item.menu_item_name}</span>
+                  <span>NRs ${(parseFloat(item.price)*item.quantity).toFixed(2)}</span>
+                </div>
+              `).join('')}
+              <div class="order-total"><span>Total Bill</span><span style="color:var(--orange);font-weight:800">NRs ${parseFloat(o.total).toFixed(2)}</span></div>
+              <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
+                <button class="btn btn-primary w-full" onclick="waiterCollectPayment(${o.id}, ${o.total}, ${o.table_number})">${icons.payment} Collect</button>
+                <button class="btn btn-outline w-full" onclick="openQRModal(${o.id}, ${o.total}, ${o.table_number})">${icons.qr} QR</button>
+              </div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+      <div id="waiter-qr-modal" style="display:none"></div>
+    `;
+    view.appendChild(section);
+    // Inject QR modal into DOM if not present
+    if (!document.getElementById('qr-modal')) {
+      document.body.insertAdjacentHTML('beforeend', `
+        <div id="qr-modal" class="modal-overlay hidden">
+          <div class="modal" style="max-width:420px">
+            <div class="modal-header">
+              <div><div class="modal-title">QR Payment Code</div><div class="modal-desc" id="qr-desc"></div></div>
+              <button class="modal-close" onclick="closeModal('qr-modal')">✕</button>
+            </div>
+            <div class="modal-body" id="qr-body" style="text-align:center"></div>
+            <div class="modal-footer">
+              <button class="btn btn-outline" onclick="closeModal('qr-modal')">Close</button>
+              <button class="btn btn-primary" onclick="markQRPaid()">${icons.check} Mark as Paid</button>
+            </div>
+          </div>
+        </div>
+      `);
+    }
+    if (!document.getElementById('payment-modal')) {
+      document.body.insertAdjacentHTML('beforeend', `
+        <div id="payment-modal" class="modal-overlay hidden">
+          <div class="modal">
+            <div class="modal-header">
+              <div><div class="modal-title" id="pm-title">Collect Payment</div><div class="modal-desc" id="pm-desc"></div></div>
+              <button class="modal-close" onclick="closeModal('payment-modal')">✕</button>
+            </div>
+            <div class="modal-body" id="pm-body"></div>
+            <div class="modal-footer">
+              <button class="btn btn-outline" onclick="closeModal('payment-modal')">Cancel</button>
+              <button class="btn btn-primary" onclick="submitPayment()">Confirm Payment</button>
+            </div>
+          </div>
+        </div>
+      `);
+    }
+  } catch(e) { console.error('Payment buttons error', e); }
+}
+
+function waiterCollectPayment(orderId, amount, tableNum) {
+  openPaymentModal(orderId, amount, tableNum);
+}
