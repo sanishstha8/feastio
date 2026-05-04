@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RestaurantOS — Built for Your Kitchen</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --orange:      #ea580c;
+      --orange-dark: #9a3412;
+      --orange-glow: rgba(234,88,12,0.15);
+      --cream:       #fdf8f3;
+      --warm-white:  #fffcf8;
+      --charcoal:    #1a1208;
+      --brown:       #6b3a1f;
+      --muted:       #9c7b65;
+      --border:      rgba(107,58,31,0.12);
+    }
+
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--cream);
+      color: var(--charcoal);
+      overflow-x: hidden;
+    }
+
+    /* ── Noise texture overlay ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 1000;
+      opacity: 0.4;
+    }
+
+    /* ── NAV ── */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0;
+      z-index: 100;
+      padding: 1.25rem 3rem;
+      display: flex; align-items: center; justify-content: space-between;
+      background: rgba(253,248,243,0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-logo {
+      display: flex; align-items: center; gap: 0.6rem;
+      font-family: 'Playfair Display', serif;
+      font-size: 1.25rem; font-weight: 700;
+      color: var(--charcoal);
+    }
+    .nav-logo-dot {
+      width: 8px; height: 8px;
+      background: var(--orange);
+      border-radius: 50%;
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(1.4);opacity:0.7} }
+    .nav-cta {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      padding: 0.55rem 1.25rem;
+      background: var(--charcoal); color: var(--cream);
+      border: none; border-radius: 999px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.875rem; font-weight: 500;
+      cursor: pointer; text-decoration: none;
+      transition: all 0.2s;
+    }
+    .nav-cta:hover { background: var(--orange); transform: translateY(-1px); }
+
+    /* ── HERO ── */
+    .hero {
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      text-align: center;
+      padding: 8rem 2rem 5rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Decorative background circles */
+    .hero::after {
+      content: '';
+      position: absolute;
+      width: 700px; height: 700px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(234,88,12,0.08) 0%, transparent 70%);
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+
+    .hero-tag {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      padding: 0.4rem 1rem;
+      background: var(--orange-glow);
+      border: 1px solid rgba(234,88,12,0.2);
+      border-radius: 999px;
+      font-size: 0.8rem; font-weight: 500;
+      color: var(--orange);
+      margin-bottom: 2rem;
+      animation: fadeUp 0.6s ease both;
+    }
+    .hero-tag-dot { width: 6px; height: 6px; background: var(--orange); border-radius: 50%; }
+
+    .hero-title {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(3rem, 8vw, 6.5rem);
+      font-weight: 900;
+      line-height: 1.05;
+      letter-spacing: -0.02em;
+      color: var(--charcoal);
+      max-width: 900px;
+      animation: fadeUp 0.6s 0.1s ease both;
+    }
+    .hero-title em {
+      font-style: italic;
+      color: var(--orange);
+      position: relative;
+    }
+    .hero-title em::after {
+      content: '';
+      position: absolute;
+      bottom: 4px; left: 0; right: 0;
+      height: 3px;
+      background: var(--orange);
+      border-radius: 2px;
+      opacity: 0.3;
+    }
+
+    .hero-sub {
+      margin-top: 1.5rem;
+      font-size: 1.15rem;
+      font-weight: 300;
+      color: var(--muted);
+      max-width: 480px;
+      line-height: 1.7;
+      animation: fadeUp 0.6s 0.2s ease both;
+    }
+
+    .hero-actions {
+      margin-top: 2.5rem;
+      display: flex; align-items: center; gap: 1rem;
+      animation: fadeUp 0.6s 0.3s ease both;
+    }
+    .btn-hero-primary {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      padding: 0.9rem 2rem;
+      background: var(--orange); color: #fff;
+      border: none; border-radius: 999px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 1rem; font-weight: 500;
+      cursor: pointer; text-decoration: none;
+      transition: all 0.25s;
+      box-shadow: 0 4px 20px rgba(234,88,12,0.3);
+    }
+    .btn-hero-primary:hover { background: var(--orange-dark); transform: translateY(-2px); box-shadow: 0 8px 28px rgba(234,88,12,0.35); }
+    .btn-hero-primary svg { transition: transform 0.2s; }
+    .btn-hero-primary:hover svg { transform: translateX(3px); }
+
+    .btn-hero-ghost {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      padding: 0.9rem 1.5rem;
+      background: transparent; color: var(--charcoal);
+      border: 1.5px solid var(--border);
+      border-radius: 999px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.95rem; font-weight: 400;
+      cursor: pointer; text-decoration: none;
+      transition: all 0.2s;
+    }
+    .btn-hero-ghost:hover { border-color: var(--orange); color: var(--orange); }
+
+    /* ── Floating cards ── */
+    .hero-cards {
+      margin-top: 4rem;
+      display: flex; gap: 1rem;
+      animation: fadeUp 0.6s 0.4s ease both;
+    }
+    .stat-pill {
+      background: var(--warm-white);
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      padding: 0.75rem 1.25rem;
+      display: flex; align-items: center; gap: 0.6rem;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+    }
+    .stat-pill-icon { font-size: 1.25rem; }
+    .stat-pill-label { font-size: 0.75rem; color: var(--muted); }
+    .stat-pill-value { font-size: 0.9rem; font-weight: 600; }
+
+    /* ── Divider ── */
+    .section-divider {
+      display: flex; align-items: center; gap: 1rem;
+      padding: 0 3rem;
+      margin: 1rem 0;
+    }
+    .section-divider span { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
+    .section-divider::before, .section-divider::after {
+      content: ''; flex: 1; height: 1px; background: var(--border);
+    }
+
+    /* ── FEATURES ── */
+    .features {
+      padding: 6rem 3rem;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    .section-label {
+      font-size: 0.8rem; font-weight: 500; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--orange);
+      margin-bottom: 0.75rem;
+    }
+    .section-title {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 700;
+      line-height: 1.15;
+      max-width: 480px;
+      margin-bottom: 3.5rem;
+    }
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+    }
+    .feature-card {
+      background: var(--warm-white);
+      border: 1px solid var(--border);
+      border-radius: 1.25rem;
+      padding: 1.75rem;
+      transition: all 0.25s;
+      position: relative;
+      overflow: hidden;
+    }
+    .feature-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, var(--orange-glow), transparent);
+      opacity: 0;
+      transition: opacity 0.25s;
+    }
+    .feature-card:hover { transform: translateY(-4px); box-shadow: 0 12px 32px rgba(0,0,0,0.08); }
+    .feature-card:hover::before { opacity: 1; }
+    .feature-icon {
+      width: 2.75rem; height: 2.75rem;
+      background: var(--orange-glow);
+      border: 1px solid rgba(234,88,12,0.2);
+      border-radius: 0.75rem;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.25rem;
+      margin-bottom: 1.1rem;
+      position: relative;
+    }
+    .feature-card h3 { font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem; position: relative; }
+    .feature-card p { font-size: 0.875rem; color: var(--muted); line-height: 1.65; position: relative; }
+
+    /* ── ROLES ── */
+    .roles-section {
+      padding: 5rem 3rem;
+      background: var(--charcoal);
+      color: var(--cream);
+      position: relative;
+      overflow: hidden;
+    }
+    .roles-section::before {
+      content: '';
+      position: absolute;
+      width: 600px; height: 600px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(234,88,12,0.15) 0%, transparent 70%);
+      top: -200px; right: -100px;
+      pointer-events: none;
+    }
+    .roles-inner { max-width: 1100px; margin: 0 auto; }
+    .roles-section .section-title { color: var(--cream); }
+    .roles-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+      margin-top: 3rem;
+    }
+    .role-card-big {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 1.25rem;
+      padding: 2rem;
+      transition: all 0.25s;
+      position: relative;
+      overflow: hidden;
+    }
+    .role-card-big:hover {
+      background: rgba(255,255,255,0.07);
+      border-color: rgba(234,88,12,0.3);
+      transform: translateY(-3px);
+    }
+    .role-emoji { font-size: 2.5rem; margin-bottom: 1rem; display: block; }
+    .role-card-big h3 {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.35rem; font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+    .role-card-big p { font-size: 0.875rem; color: rgba(255,255,255,0.5); line-height: 1.65; margin-bottom: 1.25rem; }
+    .role-perms { list-style: none; display: flex; flex-direction: column; gap: 0.35rem; }
+    .role-perms li {
+      font-size: 0.8rem; color: rgba(255,255,255,0.6);
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+    .role-perms li::before { content: '✓'; color: var(--orange); font-weight: 700; font-size: 0.75rem; }
+
+    /* ── HOW IT WORKS ── */
+    .how-section {
+      padding: 6rem 3rem;
+      max-width: 1100px; margin: 0 auto;
+    }
+    .steps { display: flex; flex-direction: column; gap: 0; margin-top: 3rem; }
+    .step {
+      display: grid; grid-template-columns: 3rem 1fr;
+      gap: 1.5rem; padding: 1.75rem 0;
+      border-bottom: 1px solid var(--border);
+      position: relative;
+    }
+    .step:last-child { border-bottom: none; }
+    .step-num {
+      width: 3rem; height: 3rem;
+      border: 1.5px solid var(--border);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'Playfair Display', serif;
+      font-size: 1.1rem; font-weight: 700;
+      color: var(--orange);
+      flex-shrink: 0;
+    }
+    .step-content h4 { font-size: 1rem; font-weight: 600; margin-bottom: 0.35rem; }
+    .step-content p { font-size: 0.875rem; color: var(--muted); line-height: 1.65; }
+
+    /* ── CTA SECTION ── */
+    .cta-section {
+      margin: 0 3rem 6rem;
+      background: var(--charcoal);
+      border-radius: 2rem;
+      padding: 5rem 4rem;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .cta-section::before {
+      content: '';
+      position: absolute;
+      width: 500px; height: 500px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(234,88,12,0.2) 0%, transparent 70%);
+      bottom: -200px; left: 50%;
+      transform: translateX(-50%);
+    }
+    .cta-section h2 {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(2rem, 4vw, 3.5rem);
+      font-weight: 900; color: var(--cream);
+      margin-bottom: 1rem;
+      position: relative;
+    }
+    .cta-section p { color: rgba(255,255,255,0.5); font-size: 1rem; margin-bottom: 2.5rem; position: relative; }
+    .cta-section .btn-hero-primary { box-shadow: 0 4px 24px rgba(234,88,12,0.4); position: relative; }
+
+    /* ── FOOTER ── */
+    footer {
+      padding: 2rem 3rem;
+      border-top: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    footer p { font-size: 0.8rem; color: var(--muted); }
+    .footer-logo {
+      font-family: 'Playfair Display', serif;
+      font-size: 1rem; font-weight: 700;
+      color: var(--charcoal);
+      display: flex; align-items: center; gap: 0.4rem;
+    }
+    .footer-logo span { color: var(--orange); }
+
+    /* ── Animations ── */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .reveal {
+      opacity: 0; transform: translateY(24px);
+      transition: opacity 0.6s ease, transform 0.6s ease;
+    }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
+
+    /* ── Responsive ── */
+    @media (max-width: 768px) {
+      nav { padding: 1rem 1.5rem; }
+      .hero { padding: 7rem 1.5rem 4rem; }
+      .hero-cards { flex-direction: column; align-items: center; }
+      .features, .how-section { padding: 4rem 1.5rem; }
+      .features-grid, .roles-grid { grid-template-columns: 1fr; }
+      .roles-section { padding: 4rem 1.5rem; }
+      .cta-section { margin: 0 1.5rem 4rem; padding: 3rem 2rem; }
+      footer { padding: 1.5rem; flex-direction: column; gap: 0.75rem; text-align: center; }
+      .hero-actions { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav>
+    <div class="nav-logo">
+      <div class="nav-logo-dot"></div>
+      RestaurantOS
+    </div>
+    <a href="/app/" class="nav-cta">
+      Staff Login
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+    </a>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-tag">
+      <div class="hero-tag-dot"></div>
+      Built for restaurant teams
+    </div>
+
+    <h1 class="hero-title">
+      Run your kitchen<br>with <em>confidence</em>
+    </h1>
+
+    <p class="hero-sub">
+      RestaurantOS keeps your managers, waiters, and kitchen team in perfect sync — from the first order to the last table.
+    </p>
+
+    <div class="hero-actions">
+      <a href="/app/" class="btn-hero-primary">
+        Go to Staff Portal
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      </a>
+      <a href="#features" class="btn-hero-ghost">
+        See how it works
+      </a>
+    </div>
+
+    <div class="hero-cards">
+      <div class="stat-pill">
+        <div class="stat-pill-icon">🪑</div>
+        <div>
+          <div class="stat-pill-label">Table Management</div>
+          <div class="stat-pill-value">Real-time status</div>
+        </div>
+      </div>
+      <div class="stat-pill">
+        <div class="stat-pill-icon">📋</div>
+        <div>
+          <div class="stat-pill-label">Order Tracking</div>
+          <div class="stat-pill-value">Live kitchen updates</div>
+        </div>
+      </div>
+      <div class="stat-pill">
+        <div class="stat-pill-icon">👥</div>
+        <div>
+          <div class="stat-pill-label">3 Role Types</div>
+          <div class="stat-pill-value">Manager · Waiter · Kitchen</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="section-divider"><span>What's inside</span></div>
+
+  <!-- FEATURES -->
+  <section class="features" id="features">
+    <div class="section-label reveal">Core Features</div>
+    <h2 class="section-title reveal">Everything your team needs, nothing they don't</h2>
+
+    <div class="features-grid">
+      <div class="feature-card reveal">
+        <div class="feature-icon">🪑</div>
+        <h3>Table Management</h3>
+        <p>See every table's status at a glance — available, occupied or reserved. Update with one tap.</p>
+      </div>
+      <div class="feature-card reveal">
+        <div class="feature-icon">📋</div>
+        <h3>Order Tracking</h3>
+        <p>Create orders, track items from pending to served, complete or cancel with full history.</p>
+      </div>
+      <div class="feature-card reveal">
+        <div class="feature-icon">🍔</div>
+        <h3>Menu Management</h3>
+        <p>Add, edit and toggle menu items by category. Toggle availability instantly when you run out.</p>
+      </div>
+      <div class="feature-card reveal">
+        <div class="feature-icon">👨‍🍳</div>
+        <h3>Kitchen Display</h3>
+        <p>Kitchen staff see incoming orders in real time and update item status — pending, preparing, ready.</p>
+      </div>
+      <div class="feature-card reveal">
+        <div class="feature-icon">👥</div>
+        <h3>Staff Management</h3>
+        <p>Manage your team's roles, shifts, hourly rates and working status all from one place.</p>
+      </div>
+      <div class="feature-card reveal">
+        <div class="feature-icon">📈</div>
+        <h3>Reports</h3>
+        <p>See total revenue, top selling items and order stats to keep a handle on performance.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ROLES -->
+  <section class="roles-section">
+    <div class="roles-inner">
+      <div class="section-label" style="color:rgba(234,88,12,0.8)">Role-based access</div>
+      <h2 class="section-title">The right tools for every person on your team</h2>
+      <div class="roles-grid">
+        <div class="role-card-big reveal">
+          <span class="role-emoji">👔</span>
+          <h3>Manager</h3>
+          <p>Full control over the entire system — from the admin portal.</p>
+          <ul class="role-perms">
+            <li>Dashboard & live stats</li>
+            <li>Menu & category management</li>
+            <li>Staff scheduling & shifts</li>
+            <li>All tables & orders</li>
+            <li>Revenue reports</li>
+          </ul>
+        </div>
+        <div class="role-card-big reveal">
+          <span class="role-emoji">🧑‍🍽️</span>
+          <h3>Waiter</h3>
+          <p>Take orders and manage tables from a focused staff portal.</p>
+          <ul class="role-perms">
+            <li>View all tables & status</li>
+            <li>Create new orders</li>
+            <li>Track order progress</li>
+            <li>See item readiness</li>
+          </ul>
+        </div>
+        <div class="role-card-big reveal">
+          <span class="role-emoji">👨‍🍳</span>
+          <h3>Kitchen</h3>
+          <p>Focused order queue — see what needs cooking and mark it done.</p>
+          <ul class="role-perms">
+            <li>View all incoming orders</li>
+            <li>Update item status</li>
+            <li>Mark items as ready</li>
+            <li>Real-time refresh</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section class="how-section">
+    <div class="section-label reveal">How it works</div>
+    <h2 class="section-title reveal">Up and running in minutes</h2>
+    <div class="steps">
+      <div class="step reveal">
+        <div class="step-num">1</div>
+        <div class="step-content">
+          <h4>Manager logs in</h4>
+          <p>The manager signs in to the admin portal, sets up the menu categories and items, and adds the team.</p>
+        </div>
+      </div>
+      <div class="step reveal">
+        <div class="step-num">2</div>
+        <div class="step-content">
+          <h4>Staff log in to their portal</h4>
+          <p>Waiters and kitchen staff log in with their accounts and land directly on their role-specific view.</p>
+        </div>
+      </div>
+      <div class="step reveal">
+        <div class="step-num">3</div>
+        <div class="step-content">
+          <h4>Waiter takes an order</h4>
+          <p>The waiter selects a table, picks items from the menu and places the order. It instantly appears in the kitchen.</p>
+        </div>
+      </div>
+      <div class="step reveal">
+        <div class="step-num">4</div>
+        <div class="step-content">
+          <h4>Kitchen prepares and marks ready</h4>
+          <p>Kitchen staff update each item from pending → preparing → ready. The waiter can see the status live.</p>
+        </div>
+      </div>
+      <div class="step reveal">
+        <div class="step-num">5</div>
+        <div class="step-content">
+          <h4>Order complete, table freed</h4>
+          <p>When the order is completed the table status automatically resets to available — ready for the next guest.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta-section">
+    <h2>Ready to run a smoother service?</h2>
+    <p>Log in to the staff portal and get your team started today.</p>
+    <a href="/app/" class="btn-hero-primary" style="font-size:1.05rem;padding:1rem 2.5rem">
+      Open Staff Portal
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+    </a>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="footer-logo">Restaurant<span>OS</span></div>
+    <p>Built for restaurant teams. Simple, fast, reliable.</p>
+    <p style="font-size:0.8rem;color:var(--muted)">Staff-only system</p>
+  </footer>
+
+  <script>
+    // Scroll reveal
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((e, i) => {
+        if (e.isIntersecting) {
+          // Stagger children in the same parent
+          const siblings = [...e.target.parentElement.querySelectorAll('.reveal:not(.visible)')];
+          const idx = siblings.indexOf(e.target);
+          setTimeout(() => e.target.classList.add('visible'), idx * 80);
+          observer.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.12 });
+
+    document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+    // Smooth scroll for anchor links
+    document.querySelectorAll('a[href^="#"]').forEach(a => {
+      a.addEventListener('click', e => {
+        e.preventDefault();
+        document.querySelector(a.getAttribute('href'))?.scrollIntoView({ behavior: 'smooth' });
+      });
+    });
+  </script>
+</body>
+</html>

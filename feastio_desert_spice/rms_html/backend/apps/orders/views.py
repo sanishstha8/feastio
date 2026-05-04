@@ -1,0 +1,134 @@
+from django.utils import timezone
+from rest_framework import viewsets, permissions, status
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from .models import Table, Order, OrderItem
+from .serializers import (
+    TableSerializer, OrderSerializer,
+    CreateOrderSerializer, OrderItemSerializer
+)
+
+class IsManagerOrReadOnly(permissions.BasePermission):
+    def has_permission(self, request, view):
+        if not request.user.is_authenticated:
+            return False
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        if request.method in ['DELETE', 'POST']:
+            return request.user.role == 'manager'
+        return True
+
+class TableViewSet(viewsets.ModelViewSet):
+    queryset = Table.objects.all()
+    serializer_class = TableSerializer
+    permission_classes = [IsManagerOrReadOnly]
+
+    @action(detail=True, methods=['patch'], url_path='set-status')
+    def set_status(self, request, pk=None):
+        """PATCH /api/orders/tables/{id}/set-status/  body: { status: 'available' }"""
+        table = self.get_object()
+        new_status = request.data.get('status')
+        if new_status not in ['available', 'occupied', 'reserved']:
+            return Response({'error': 'Invalid status'}, status=status.HTTP_400_BAD_REQUEST)
+        table.status = new_status
+        if request.data.get('notes') is not None:
+            table.notes = request.data.get('notes')
+        table.save()
+        return Response(TableSerializer(table).data)
+
+
+class OrderViewSet(viewsets.ModelViewSet):
+    queryset = Order.objects.select_related('table').prefetch_related('items__menu_item').all()
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return CreateOrderSerializer
+        return OrderSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        status_filter = self.request.query_params.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        serializer = CreateOrderSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        order = serializer.save()
+        return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['patch'], url_path='complete')
+    def complete(self, request, pk=None):
+        """PATCH /api/orders/orders/{id}/complete/"""
+        order = self.get_object()
+        order.status = 'completed'
+        order.completed_at = timezone.now()
+        order.save()
+        # Free the table
+        order.table.status = 'available'
+        order.table.save()
+        return Response(OrderSerializer(order).data)
+
+    @action(detail=True, methods=['patch'], url_path='cancel')
+    def cancel(self, request, pk=None):
+        """PATCH /api/orders/orders/{id}/cancel/"""
+        order = self.get_object()
+        order.status = 'cancelled'
+        order.save()
+        order.table.status = 'available'
+        order.table.save()
+        return Response(OrderSerializer(order).data)
+    
+    @action(detail=True, methods=['post'], url_path='add-items')
+    def add_items(self, request, pk=None):
+        order = self.get_object()
+        if order.status != 'active':
+           return Response(
+                {'error': 'Can only add items to active orders'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        items_data = request.data.get('items', [])
+        if not items_data:
+           return Response({'error': 'No items provided'}, status=status.HTTP_400_BAD_REQUEST)
+
+        from apps.menu.models import MenuItem
+        for item_data in items_data:
+            try:
+                menu_item = MenuItem.objects.get(pk=item_data['menu_item'])
+                existing = order.items.filter(menu_item=menu_item).first()
+                if existing:
+                   existing.quantity += item_data.get('quantity', 1)
+                   existing.save()
+                else:
+                    OrderItem.objects.create(
+                        order=order,
+                        menu_item=menu_item,
+                        quantity=item_data.get('quantity', 1),
+                        price=menu_item.price,
+                    )
+            except MenuItem.DoesNotExist:
+               return Response(
+                {'error': f"Menu item {item_data['menu_item']} not found"},
+                status=status.HTTP_404_NOT_FOUND
+             )
+        order.calculate_total()
+        return Response(OrderSerializer(order).data)
+
+    @action(detail=True, methods=['patch'], url_path='items/(?P<item_id>[^/.]+)/status')
+    def update_item_status(self, request, pk=None, item_id=None):
+        """PATCH /api/orders/orders/{id}/items/{item_id}/status/  body: { status: 'preparing' }"""
+        order = self.get_object()
+        try:
+            item = order.items.get(pk=item_id)
+        except OrderItem.DoesNotExist:
+            return Response({'error': 'Item not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        new_status = request.data.get('status')
+        if new_status not in ['pending', 'preparing', 'ready', 'served']:
+            return Response({'error': 'Invalid status'}, status=status.HTTP_400_BAD_REQUEST)
+
+        item.status = new_status
+        item.save()
+        return Response(OrderItemSerializer(item).data)
