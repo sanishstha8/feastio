@@ -689,21 +689,26 @@ function renderMenu() {
   const categories = [...new Set(STATE.menuItems.map(m => m.category_name))].filter(Boolean);
   setInner(`
     <div class="page-header">
-      <div><h1>Menu </h1><p></p></div>
-      <div style="display:flex;gap:0.5rem">
+      <div><h1>Menu</h1><p></p></div>
+      <div style="display:flex;gap:0.5rem;align-items:center">
+        <input class="form-input" id="admin-menu-search"
+          placeholder="🔍 Search menu items..."
+          oninput="adminFilterMenu(this.value)"
+          style="width:220px;margin:0">
         <button class="btn btn-outline btn-sm" onclick="refreshMenu()">${icons.refresh} Refresh</button>
         <button class="btn btn-primary" onclick="openMenuModal()">${icons.plus} Add Item</button>
       </div>
     </div>
+    <div id="admin-menu-categories">
     ${STATE.menuItems.length === 0 ? '<div class="empty-state"><p>No menu items yet</p></div>' :
       categories.map(cat => {
         const items = STATE.menuItems.filter(m => m.category_name === cat);
         return `
-          <div class="menu-category">
+          <div class="menu-category" data-cat="${cat}">
             <h2>${cat}</h2>
             <div class="menu-grid">
               ${items.map(item => `
-                <div class="menu-item-card">
+                <div class="menu-item-card" data-name="${item.name.toLowerCase()}">
                   <div class="menu-item-top">
                     <div class="menu-item-name">${item.name}</div>
                     <span class="badge ${item.available ? 'badge-green' : 'badge-gray'} clickable-badge" onclick="toggleMenuItem(${item.id})"> ${item.available ? 'Available' : 'Off'} </span>
@@ -723,8 +728,23 @@ function renderMenu() {
         `;
       }).join('')
     }
+    </div>
     ${menuFormModal()}
   `);
+}
+
+function adminFilterMenu(query) {
+  const q = query.toLowerCase().trim();
+  document.querySelectorAll('#admin-menu-categories .menu-category').forEach(section => {
+    let anyVisible = false;
+    section.querySelectorAll('.menu-item-card').forEach(card => {
+      const name = card.getAttribute('data-name') || '';
+      const show = !q || name.includes(q);
+      card.style.display = show ? '' : 'none';
+      if (show) anyVisible = true;
+    });
+    section.style.display = anyVisible ? '' : 'none';
+  });
 }
 
 function menuFormModal(item = null) {
@@ -870,7 +890,7 @@ function renderStaff() {
             <div class="staff-detail-row">${icons.mail} ${s.email || ''}</div>
             <div class="staff-detail-row">${icons.phone} ${s.phone || '—'}</div>
             <div class="staff-detail-row">${icons.calendar} ${s.shift} shift</div>
-            <div class="staff-detail-row">${icons.dollar} NRs ${parseFloat(s.hourly_rate).toFixed(2)}/hr</div>
+            <div class="staff-detail-row">NRs ${parseFloat(s.hourly_rate).toFixed(2)}/hr</div>
             <div class="staff-card-actions">
               <select class="form-select" style="flex:1;font-size:0.8rem;padding:0.3rem 0.5rem" onchange="updateStaffStatus(${s.id}, this.value)">
                 <option value="active" ${s.status==='active'?'selected':''}>Active</option>
@@ -1362,6 +1382,10 @@ function waiterOpenTableModal(tableId) {
 
   document.getElementById('wtm-footer').innerHTML = order ? `
     <button class="btn btn-outline" onclick="closeModal('waiter-table-modal')">Close</button>
+    <button class="btn btn-outline" style="color:#dc2626;border-color:#dc2626" onclick="wtmCancelOrder(${order.id})">Cancel Order</button>
+    <button class="btn btn-primary" onclick="wtmCompleteAndPay(${order.id}, ${order.total}, ${t.number})">
+      ${icons.check} Complete & Pay
+    </button>
   ` : `
     <button class="btn btn-outline" onclick="closeModal('waiter-table-modal')">Cancel</button>
     <button class="btn btn-primary" onclick="wtmSubmitNewOrder(${tableId})">${icons.plus} Place Order</button>
@@ -1369,6 +1393,69 @@ function waiterOpenTableModal(tableId) {
 
   wtmCart = {};
   openModal('waiter-table-modal');
+}
+
+// ── Waiter Complete Order & Pay ──────────────────────────────────────────────
+async function wtmCompleteAndPay(orderId, amount, tableNum) {
+  try {
+    await api.patch(`/orders/orders/${orderId}/complete/`);
+    const [orders, tables] = await Promise.all([api.get('/orders/orders/'), api.get('/orders/tables/')]);
+    STATE.orders = orders.results ?? orders;
+    STATE.tables = tables.results ?? tables;
+    toast('Order completed!');
+    closeModal('waiter-table-modal');
+    // ensure payment modals exist in DOM
+    if (!document.getElementById('payment-modal')) {
+      document.body.insertAdjacentHTML('beforeend', `
+        <div id="payment-modal" class="modal-overlay hidden">
+          <div class="modal">
+            <div class="modal-header">
+              <div><div class="modal-title" id="pm-title">Collect Payment</div><div class="modal-desc" id="pm-desc"></div></div>
+              <button class="modal-close" onclick="closeModal('payment-modal')">✕</button>
+            </div>
+            <div class="modal-body" id="pm-body"></div>
+            <div class="modal-footer">
+              <button class="btn btn-outline" onclick="closeModal('payment-modal')">Cancel</button>
+              <button class="btn btn-primary" onclick="submitPayment()">${icons.payment} Confirm Payment</button>
+            </div>
+          </div>
+        </div>
+      `);
+    }
+    if (!document.getElementById('qr-modal')) {
+      document.body.insertAdjacentHTML('beforeend', `
+        <div id="qr-modal" class="modal-overlay hidden">
+          <div class="modal" style="max-width:420px">
+            <div class="modal-header">
+              <div><div class="modal-title">QR Payment Code</div><div class="modal-desc" id="qr-desc"></div></div>
+              <button class="modal-close" onclick="closeModal('qr-modal')">✕</button>
+            </div>
+            <div class="modal-body" id="qr-body" style="text-align:center"></div>
+            <div class="modal-footer">
+              <button class="btn btn-outline" onclick="closeModal('qr-modal')">Close</button>
+              <button class="btn btn-primary" onclick="markQRPaid()">${icons.check} Mark as Paid</button>
+            </div>
+          </div>
+        </div>
+      `);
+    }
+    renderWaiterView();
+    // open payment modal after a short delay so DOM is ready
+    setTimeout(() => openPaymentModal(orderId, amount, tableNum), 100);
+  } catch { toast('Failed to complete order', 'error'); }
+}
+
+async function wtmCancelOrder(orderId) {
+  if (!confirm('Cancel this order?')) return;
+  try {
+    await api.patch(`/orders/orders/${orderId}/cancel/`);
+    const [orders, tables] = await Promise.all([api.get('/orders/orders/'), api.get('/orders/tables/')]);
+    STATE.orders = orders.results ?? orders;
+    STATE.tables = tables.results ?? tables;
+    closeModal('waiter-table-modal');
+    renderWaiterView();
+    toast('Order cancelled');
+  } catch { toast('Failed to cancel order', 'error'); }
 }
 
 // ── Menu search filter ────────────────────────────────────────────────────────
@@ -1487,6 +1574,19 @@ async function wtmSubmitAddItems(orderId, tableId) {
     renderWaiterView();
     toast('Items added to order!');
   } catch { toast('Failed to add items', 'error'); }
+}
+
+async function waiterMarkServed(orderId, itemId) {
+  try {
+    await api.patch(`/orders/orders/${orderId}/items/${itemId}/status/`, { status: 'served' });
+    const order = STATE.orders.find(o => o.id === orderId);
+    if (order) {
+      const item = (order.items || []).find(i => i.id === itemId);
+      if (item) item.status = 'served';
+    }
+    renderWaiterView();
+    toast('Item marked as served!');
+  } catch { toast('Failed to update item', 'error'); }
 }
 
 function waiterOrderModal() {
@@ -1828,28 +1928,13 @@ async function renderPayments() {
     ` : `<div style="text-align:center;padding:1.5rem;background:var(--green-bg,#f0fdf4);border:1px solid var(--green);border-radius:var(--radius);margin-bottom:2rem;color:var(--green)">✓ All bills are settled!</div>`}
 
     <!-- Payment History -->
-    <div style="margin-bottom:0.75rem"><h2 style="font-size:1.05rem;font-weight:700">Payment History</h2></div>
+    <div style="margin-bottom:0.75rem;display:flex;align-items:center;justify-content:space-between">
+      <h2 style="font-size:1.05rem;font-weight:700">Payment History</h2>
+      <span style="font-size:0.8rem;color:var(--text-muted)" id="payment-history-count"></span>
+    </div>
     <div class="card">
-      <div class="card-content">
-        ${paid.length === 0 && refunded.length === 0 ? '<div class="empty-state"><p>No payments recorded yet</p></div>' :
-          [...paid, ...refunded].sort((a,b) => new Date(b.created_at) - new Date(a.created_at)).map(p => `
-            <div class="order-item-row">
-              <div>
-                <div style="font-weight:600">Order #${p.order} — Table ${p.table_number}</div>
-                <div style="font-size:0.75rem;color:var(--text-muted)">${new Date(p.created_at).toLocaleString()} · ${p.method.toUpperCase()}</div>
-                ${p.tip > 0 ? `<div style="font-size:0.75rem;color:var(--green)">Tip: NRs ${parseFloat(p.tip).toFixed(2)}</div>` : ''}
-                ${p.discount > 0 ? `<div style="font-size:0.75rem;color:var(--blue)">Discount: NRs ${parseFloat(p.discount).toFixed(2)}</div>` : ''}
-                ${p.note ? `<div style="font-size:0.75rem;color:var(--text-muted);font-style:italic">"${p.note}"</div>` : ''}
-              </div>
-              <div style="text-align:right">
-                <div style="font-weight:700;font-size:1rem">NRs ${parseFloat(p.grand_total).toFixed(2)}</div>
-                <span class="badge ${p.status === 'paid' ? 'badge-green' : 'badge-red'}">${p.status}</span>
-                ${p.status === 'paid' ? `<div style="margin-top:0.25rem"><button class="btn btn-outline btn-sm" style="font-size:0.7rem;padding:0.2rem 0.5rem" onclick="refundPayment(${p.id})">Refund</button></div>` : ''}
-              </div>
-            </div>
-          `).join('')
-        }
-      </div>
+      <div class="card-content" id="payment-history-list"></div>
+      <div id="payment-pagination" style="display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:1rem;border-top:1px solid var(--border)"></div>
     </div>
 
     <!-- Modals -->
@@ -1881,6 +1966,59 @@ async function renderPayments() {
       </div>
     </div>
   `);
+  // initialise paginated history
+  _initPaymentHistory(paid, refunded);
+}
+
+// ── Payment History Pagination ────────────────────────────────────────────────
+const PAYMENT_PAGE_SIZE = 5;
+
+function renderPaymentHistoryPage(allPayments, page) {
+  const total      = allPayments.length;
+  const totalPages = Math.ceil(total / PAYMENT_PAGE_SIZE) || 1;
+  page = Math.max(1, Math.min(page, totalPages));
+  const start = (page - 1) * PAYMENT_PAGE_SIZE;
+  const slice = allPayments.slice(start, start + PAYMENT_PAGE_SIZE);
+  const countEl = document.getElementById('payment-history-count');
+  const listEl  = document.getElementById('payment-history-list');
+  const pagEl   = document.getElementById('payment-pagination');
+  if (!listEl) return;
+  if (countEl) countEl.textContent = total + ' record' + (total !== 1 ? 's' : '');
+  if (total === 0) {
+    listEl.innerHTML = '<div class="empty-state"><p>No payments recorded yet</p></div>';
+    if (pagEl) pagEl.innerHTML = '';
+    return;
+  }
+  listEl.innerHTML = slice.map(function(p) {
+    return '<div class="order-item-row">' +
+      '<div>' +
+        '<div style="font-weight:600">Order #' + p.order + ' — Table ' + p.table_number + '</div>' +
+        '<div style="font-size:0.75rem;color:var(--text-muted)">' + new Date(p.created_at).toLocaleString() + ' · ' + p.method.toUpperCase() + '</div>' +
+        (p.tip > 0 ? '<div style="font-size:0.75rem;color:var(--green)">Tip: NRs ' + parseFloat(p.tip).toFixed(2) + '</div>' : '') +
+        (p.discount > 0 ? '<div style="font-size:0.75rem;color:var(--blue)">Discount: NRs ' + parseFloat(p.discount).toFixed(2) + '</div>' : '') +
+        (p.note ? '<div style="font-size:0.75rem;color:var(--text-muted);font-style:italic">"' + p.note + '"</div>' : '') +
+      '</div>' +
+      '<div style="text-align:right">' +
+        '<div style="font-weight:700;font-size:1rem">NRs ' + parseFloat(p.grand_total).toFixed(2) + '</div>' +
+        '<span class="badge ' + (p.status === 'paid' ? 'badge-green' : 'badge-red') + '">' + p.status + '</span>' +
+        (p.status === 'paid' ? '<div style="margin-top:0.25rem"><button class="btn btn-outline btn-sm" style="font-size:0.7rem;padding:0.2rem 0.5rem" onclick="refundPayment(' + p.id + ')">Refund</button></div>' : '') +
+      '</div>' +
+    '</div>';
+  }).join('');
+  if (pagEl) {
+    pagEl.innerHTML =
+      '<button class="btn btn-outline btn-sm" ' + (page <= 1 ? 'disabled' : '') + ' onclick="renderPaymentHistoryPage(window._cachedPayments,' + (page-1) + ')">&#8592; Prev</button>' +
+      '<span style="font-size:0.85rem;color:var(--text-muted);padding:0 0.5rem">Page ' + page + ' of ' + totalPages + '</span>' +
+      '<button class="btn btn-outline btn-sm" ' + (page >= totalPages ? 'disabled' : '') + ' onclick="renderPaymentHistoryPage(window._cachedPayments,' + (page+1) + ')">Next &#8594;</button>';
+  }
+  window._cachedPayments = allPayments;
+}
+
+// called from renderPayments after setInner
+function _initPaymentHistory(paid, refunded) {
+  const all = [...paid, ...refunded].sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+  window._cachedPayments = all;
+  renderPaymentHistoryPage(all, 1);
 }
 
 let _paymentOrderId = null;
