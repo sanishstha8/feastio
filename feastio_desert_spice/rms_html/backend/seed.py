@@ -39,10 +39,18 @@ def run():
     kitchen, _ = User.objects.get_or_create(
         username='kitchen@restaurant.com',
         defaults=dict(email='kitchen@restaurant.com', first_name='Mike',
-                      last_name='Chen', role='kitchen')
+                  last_name='Chen', role='kitchen')
     )
     kitchen.set_password('kitchen123')
     kitchen.save()
+
+    cashier, _ = User.objects.get_or_create(
+        username='cashier@restaurant.com',
+        defaults=dict(email='cashier@restaurant.com', first_name='Sarah',
+                  last_name='Jones', role='cashier')
+    )
+    cashier.set_password('cashier123')
+    cashier.save()
 
     print("  ✅ Users created")
 
@@ -59,6 +67,11 @@ def run():
         phone='555-0003', hourly_rate=18, shift='morning',
         status='active', hire_date=date(2022, 8, 10)
     ))
+    Employee.objects.get_or_create(user=cashier, defaults=dict(
+        phone='555-0004', hourly_rate=14, shift='morning',
+        status='active', hire_date=date(2023, 6, 1)
+    ))
+
 
     print("  ✅ Employee profiles created")
 
@@ -131,6 +144,7 @@ def run():
     print("   Manager : admin@restaurant.com / admin123")
     print("   Waiter  : waiter@restaurant.com / waiter123")
     print("   Kitchen : kitchen@restaurant.com / kitchen123")
+    print("   Cashier : cashier@restaurant.com / cashier123")
 
 
 if __name__ == '__main__':

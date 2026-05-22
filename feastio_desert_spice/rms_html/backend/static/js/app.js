@@ -3,6 +3,7 @@ let STATE = {
   user: null,
   tables: [], orders: [], menuItems: [], menuCategories: [], staff: [],
   currentPage: 'landing',
+  refreshInterval: null,
 };
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -71,12 +72,29 @@ async function checkAuth() {
     showPage('landing');
   }
 }
+function startAutoRefresh() {
+  if (STATE.refreshInterval) clearInterval(STATE.refreshInterval);
+  STATE.refreshInterval = setInterval(async () => {
+    if (STATE.user?.role === 'manager') await loadAllData();
+    else if (STATE.user?.role === 'cashier') await loadCashierData();
+    else await loadStaffData();
+  }, 30000);
+}
+
+function stopAutoRefresh() {
+  if (STATE.refreshInterval) clearInterval(STATE.refreshInterval);
+  STATE.refreshInterval = null;
+}
 
 function afterLogin() {
   hideLoading();
+  startAutoRefresh();
   if (STATE.user.role === 'manager') {
     renderManagerShell();
     loadAllData().then(() => renderDashboard());
+  } else if (STATE.user.role === 'cashier') {
+    renderCashierPortal();
+    loadCashierData();
   } else {
     renderStaffPortal();
     loadStaffData();
@@ -84,12 +102,14 @@ function afterLogin() {
 }
 
 function logout() {
+  stopAutoRefresh();
   TokenStorage.clear();
   STATE.user = null;
   STATE.tables = []; STATE.orders = []; STATE.menuItems = []; STATE.staff = [];
   showPage('landing');
   document.getElementById('app-shell').innerHTML = '';
   document.getElementById('staff-portal').innerHTML = '';
+  document.getElementById('cashier-portal').innerHTML = '';
 }
 
 // ── Data Loading ──────────────────────────────────────────────────────────────
@@ -123,6 +143,18 @@ async function loadStaffData() {
     if (STATE.user.role === 'waiter') renderWaiterView();
     else renderKitchenView();
   } catch(e) { toast('Failed to load data', 'error'); }
+}
+
+async function loadCashierData() {
+  try {
+    const [orders, payments] = await Promise.all([
+      api.get('/orders/orders/'),
+      api.get('/orders/payments/'),
+    ]);
+    STATE.orders   = orders.results   ?? orders;
+    STATE.payments = payments.results ?? payments;
+    renderCashierView();
+  } catch { toast('Failed to load data', 'error'); }
 }
 
 // ── Manager Shell ─────────────────────────────────────────────────────────────
@@ -445,14 +477,21 @@ async function updateItemStatusAndRefreshModal(orderId, itemId, status, tableId)
 }
 
 async function completeOrderFromModal(orderId) {
+  const order = STATE.orders.find(o => o.id === orderId);
+  const notReady = (order?.items || []).filter(i => !['ready','served'].includes(i.status));
+  if (notReady.length > 0) {
+    const names = notReady.map(i => i.menu_item_name).join(', ');
+    toast(`Kitchen hasn't finished yet: ${names}`, 'error');
+    return;
+  }
   try {
     await api.patch(`/orders/orders/${orderId}/complete/`);
     const [orders, tables] = await Promise.all([api.get('/orders/orders/'), api.get('/orders/tables/')]);
     STATE.orders = orders.results ?? orders;
     STATE.tables = tables.results ?? tables;
     closeModal('table-modal');
-    renderTablesOrders();
-    toast('Order completed!');
+    renderManagerView();
+    toast('Order completed — sent to cashier!');
   } catch { toast('Failed to complete order', 'error'); }
 }
 
@@ -661,13 +700,20 @@ async function updateItemStatus(orderId, itemId, status) {
 }
 
 async function completeOrder(orderId) {
+  const order = STATE.orders.find(o => o.id === orderId);
+  const notReady = (order?.items || []).filter(i => !['ready','served'].includes(i.status));
+  if (notReady.length > 0) {
+    const names = notReady.map(i => i.menu_item_name).join(', ');
+    toast(`Kitchen hasn't finished yet: ${names}`, 'error');
+    return;
+  }
   try {
     await api.patch(`/orders/orders/${orderId}/complete/`);
     const [orders, tables] = await Promise.all([api.get('/orders/orders/'), api.get('/orders/tables/')]);
     STATE.orders = orders.results ?? orders;
     STATE.tables = tables.results ?? tables;
-    renderTablesOrders();
-    toast('Order completed!');
+    renderManagerView();
+    toast('Order completed — sent to cashier!');
   } catch { toast('Failed to complete order', 'error'); }
 }
 
@@ -1131,17 +1177,319 @@ function renderReports() {
   `);
 }
 
+// ── Cashier Portal ────────────────────────────────────────────────────────────
+function renderCashierPortal() {
+  const fullName = [STATE.user.first_name, STATE.user.last_name].filter(Boolean).join(' ') || STATE.user.username;
+  const initials = fullName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  document.getElementById('cashier-portal').innerHTML = `
+    <div class="staff-header">
+      <div style="display:flex;align-items:center;gap:0.6rem">
+        <div class="user-avatar" style="background:var(--orange)">${initials}</div>
+        <div>
+          <div style="font-weight:700">Cashier Portal</div>
+          <div style="font-size:0.75rem;color:var(--text-muted)">${fullName}</div>
+        </div>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="logout()">${icons.logout} Logout</button>
+    </div>
+    <div class="staff-content" id="cashier-view"></div>
+  `;
+  showPage('cashier');
+}
+
+function renderCashierView() {
+  const unpaid = STATE.orders.filter(o => {
+    if (o.status !== 'completed') return false;
+    const paid = (STATE.payments || []).find(p => p.order === o.id && p.status === 'paid');
+    return !paid;
+  });
+
+  const paidToday = (STATE.payments || []).filter(p => {
+    if (p.status !== 'paid') return false;
+    const today = new Date().toDateString();
+    return new Date(p.paid_at || p.created_at).toDateString() === today;
+  });
+
+  const todayRevenue = paidToday.reduce((s, p) => s + parseFloat(p.grand_total), 0);
+
+  document.getElementById('cashier-view').innerHTML = `
+    <div style="padding:1.5rem">
+
+      <!-- Stats -->
+      <div class="stats-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:1.5rem">
+        <div class="stat-card">
+          <div class="stat-label">Bills Due</div>
+          <div class="stat-value" style="color:var(--orange)">${unpaid.length}</div>
+          <div class="stat-sub">Awaiting payment</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Collected Today</div>
+          <div class="stat-value" style="color:var(--green)">${paidToday.length}</div>
+          <div class="stat-sub">Payments</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Revenue Today</div>
+          <div class="stat-value" style="color:var(--green)">NRs ${todayRevenue.toFixed(2)}</div>
+          <div class="stat-sub">Total collected</div>
+        </div>
+      </div>
+
+      <!-- Bills Due -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <h2 style="font-size:1rem;font-weight:600">Bills Due for Payment</h2>
+        <button class="btn btn-outline btn-sm" onclick="loadCashierData()">${icons.refresh} Refresh</button>
+      </div>
+
+      ${unpaid.length === 0
+        ? `<div style="text-align:center;padding:2rem;background:var(--green-bg);border:1px solid var(--green-border);border-radius:var(--radius);color:var(--green);margin-bottom:1.5rem">
+             All bills are settled!
+           </div>`
+        : `<div class="orders-grid" style="margin-bottom:1.5rem">
+            ${unpaid.map(o => `
+              <div class="order-card" style="border:1.5px solid var(--orange)">
+                <div class="order-card-header" style="background:var(--orange-light)">
+                  <span style="font-weight:700">Table ${o.table_number} — Order #${o.id}</span>
+                  <span class="badge badge-orange">Bill Due</span>
+                </div>
+                <div class="order-card-body">
+                  ${(o.items||[]).map(item => `
+                    <div class="order-item-row">
+                      <span>${item.quantity}x ${item.menu_item_name}</span>
+                      <span>NRs ${(parseFloat(item.price)*item.quantity).toFixed(2)}</span>
+                    </div>
+                  `).join('')}
+                  <div class="order-total">
+                    <span style="font-weight:700">Total Bill</span>
+                    <span style="color:var(--orange);font-size:1.1rem;font-weight:800">
+                      NRs ${parseFloat(o.total).toFixed(2)}
+                    </span>
+                  </div>
+                  <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
+                    <button class="btn btn-primary w-full"
+                      onclick="cashierCollectPayment(${o.id}, ${o.total}, ${o.table_number})">
+                      ${icons.check} Collect
+                    </button>
+                    <button class="btn btn-outline"
+                      onclick="cashierShowQR(${o.id}, ${o.total}, ${o.table_number})">
+                      QR
+                    </button>
+                  </div>
+                </div>
+              </div>
+            `).join('')}
+          </div>`
+      }
+
+      <!-- Today's Payment History -->
+      <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem">Today's Payments</h2>
+      ${paidToday.length === 0
+        ? `<div class="empty-state"><p>No payments collected today</p></div>`
+        : `<div class="card">
+            <div class="card-content">
+              ${paidToday.map(p => `
+                <div class="order-item-row">
+                  <div>
+                    <div style="font-weight:600">Order #${p.order} — Table ${p.table_number}</div>
+                    <div style="font-size:0.75rem;color:var(--text-muted)">
+                      ${new Date(p.paid_at||p.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}
+                      · ${p.method.toUpperCase()}
+                    </div>
+                  </div>
+                  <div style="text-align:right">
+                    <div style="font-weight:700">NRs ${parseFloat(p.grand_total).toFixed(2)}</div>
+                    <span class="badge badge-green">paid</span>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>`
+      }
+
+      <!-- Collect Payment Modal -->
+      <div id="cashier-payment-modal" class="modal-overlay hidden">
+        <div class="modal">
+          <div class="modal-header">
+            <div>
+              <div class="modal-title" id="cpm-title">Collect Payment</div>
+              <div class="modal-desc" id="cpm-desc"></div>
+            </div>
+            <button class="modal-close" onclick="closeModal('cashier-payment-modal')">✕</button>
+          </div>
+          <div class="modal-body" id="cpm-body"></div>
+          <div class="modal-footer">
+            <button class="btn btn-outline" onclick="closeModal('cashier-payment-modal')">Cancel</button>
+            <button class="btn btn-primary" onclick="cashierSubmitPayment()">
+              ${icons.check} Confirm Payment
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- QR Modal -->
+      <div id="cashier-qr-modal" class="modal-overlay hidden">
+        <div class="modal" style="max-width:380px">
+          <div class="modal-header">
+            <div>
+              <div class="modal-title">QR Payment</div>
+              <div class="modal-desc" id="cqr-desc"></div>
+            </div>
+            <button class="modal-close" onclick="closeModal('cashier-qr-modal')">✕</button>
+          </div>
+          <div class="modal-body" id="cqr-body" style="text-align:center"></div>
+          <div class="modal-footer">
+            <button class="btn btn-outline" onclick="closeModal('cashier-qr-modal')">Close</button>
+            <button class="btn btn-primary" onclick="cashierMarkQRPaid()">
+              ${icons.check} Mark as Paid
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  `;
+}
+
+// ── Cashier Payment Functions ─────────────────────────────────────────────────
+let _cPayOrderId = null;
+let _cPayAmount  = null;
+let _cQROrderId  = null;
+let _cQRAmount   = null;
+
+function cashierCollectPayment(orderId, amount, tableNum) {
+  _cPayOrderId = orderId;
+  _cPayAmount  = parseFloat(amount);
+  document.getElementById('cpm-title').textContent = `Collect Payment — Table ${tableNum}`;
+  document.getElementById('cpm-desc').textContent  = `Order #${orderId}`;
+  document.getElementById('cpm-body').innerHTML = `
+    <div style="background:var(--bg);border-radius:var(--radius);padding:1rem;margin-bottom:1rem;text-align:center">
+      <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.25rem">Bill Amount</div>
+      <div style="font-size:2rem;font-weight:800;color:var(--orange)">NRs ${_cPayAmount.toFixed(2)}</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Payment Method</label>
+      <div style="display:flex;gap:0.5rem">
+        <button id="cpm-cash" class="btn btn-primary w-full" onclick="cSelectMethod('cash')">Cash</button>
+        <button id="cpm-card" class="btn btn-outline w-full" onclick="cSelectMethod('card')">Card</button>
+        <button id="cpm-qr"   class="btn btn-outline w-full" onclick="cSelectMethod('qr')">QR</button>
+      </div>
+      <input type="hidden" id="cpm-method" value="cash">
+    </div>
+    <div class="form-grid-2">
+      <div class="form-group">
+        <label class="form-label">Tip (NRs)</label>
+        <input class="form-input" type="number" id="cpm-tip"
+          value="0" min="0" oninput="cUpdateTotal()">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Discount (NRs)</label>
+        <input class="form-input" type="number" id="cpm-discount"
+          value="0" min="0" oninput="cUpdateTotal()">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Note (optional)</label>
+      <input class="form-input" id="cpm-note" placeholder="e.g. paid by card">
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;
+      padding:0.75rem;background:var(--bg);border-radius:var(--radius);border:1px solid var(--border)">
+      <span style="font-weight:600">Grand Total</span>
+      <span style="font-size:1.3rem;font-weight:800;color:var(--green)" id="cpm-grand">
+        NRs ${_cPayAmount.toFixed(2)}
+      </span>
+    </div>
+  `;
+  openModal('cashier-payment-modal');
+}
+
+function cSelectMethod(m) {
+  document.getElementById('cpm-method').value = m;
+  ['cash','card','qr'].forEach(x => {
+    const btn = document.getElementById(`cpm-${x}`);
+    if (btn) btn.className = x === m ? 'btn btn-primary w-full' : 'btn btn-outline w-full';
+  });
+}
+
+function cUpdateTotal() {
+  const tip      = parseFloat(document.getElementById('cpm-tip')?.value)      || 0;
+  const discount = parseFloat(document.getElementById('cpm-discount')?.value) || 0;
+  const grand    = Math.max(0, _cPayAmount + tip - discount);
+  const el = document.getElementById('cpm-grand');
+  if (el) el.textContent = `NRs ${grand.toFixed(2)}`;
+}
+
+async function cashierSubmitPayment() {
+  const method   = document.getElementById('cpm-method').value;
+  const tip      = parseFloat(document.getElementById('cpm-tip').value)      || 0;
+  const discount = parseFloat(document.getElementById('cpm-discount').value) || 0;
+  const note     = document.getElementById('cpm-note').value;
+  try {
+    await api.post('/orders/payments/', {
+      order_id: _cPayOrderId, method, tip, discount, note,
+    });
+    closeModal('cashier-payment-modal');
+    toast('Payment recorded successfully!');
+    loadCashierData();
+  } catch(e) {
+    try {
+      const err = JSON.parse(e.message);
+      toast(Object.values(err).flat()[0] || 'Payment failed', 'error');
+    } catch { toast('Failed to record payment', 'error'); }
+  }
+}
+
+function cashierShowQR(orderId, amount, tableNum) {
+  _cQROrderId = orderId;
+  _cQRAmount  = parseFloat(amount);
+  document.getElementById('cqr-desc').textContent = `Table ${tableNum} — Order #${orderId}`;
+  document.getElementById('cqr-body').innerHTML = `
+    <div style="margin-bottom:1rem">
+      <div style="font-size:0.85rem;color:var(--text-muted)">Amount Due</div>
+      <div style="font-size:2rem;font-weight:800;color:var(--orange)">
+        NRs ${_cQRAmount.toFixed(2)}
+      </div>
+    </div>
+    <div id="cqr-canvas" style="display:flex;justify-content:center;margin:1rem 0"></div>
+    <p style="font-size:0.8rem;color:var(--text-muted)">
+      Scan to pay via eSewa / Khalti / IME Pay
+    </p>
+  `;
+  const qrData = encodeURIComponent(
+    `FEASTIO|Order#${orderId}|Table${tableNum}|NRs${_cQRAmount.toFixed(2)}`
+  );
+  const img = document.createElement('img');
+  img.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${qrData}&bgcolor=ffffff&color=1a1a1a&margin=10`;
+  img.style.cssText = 'width:200px;height:200px;border-radius:8px;border:2px solid var(--border)';
+  img.alt = 'QR Code';
+  document.getElementById('cqr-canvas').appendChild(img);
+  openModal('cashier-qr-modal');
+}
+
+async function cashierMarkQRPaid() {
+  try {
+    await api.post('/orders/payments/', {
+      order_id: _cQROrderId, method: 'qr',
+      tip: 0, discount: 0, note: 'Paid via QR',
+    });
+    closeModal('cashier-qr-modal');
+    toast('QR payment confirmed!');
+    loadCashierData();
+  } catch { toast('Failed to mark as paid', 'error'); }
+}
+
 // ── Staff Portal ──────────────────────────────────────────────────────────────
+
 function renderStaffPortal() {
   const role     = STATE.user.role;
   const fullName = [STATE.user.first_name, STATE.user.last_name].filter(Boolean).join(' ') || STATE.user.username;
   const initials = fullName.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  const portalLabel = role === 'kitchen' ? 'Kitchen' : 'Waiter';
+  const portalIcon  = role === 'kitchen' ? icons.chef : icons.waiter;
   document.getElementById('staff-portal').innerHTML = `
     <div class="staff-header">
       <div style="display:flex;align-items:center;gap:0.6rem">
-        <div class="sidebar-logo-icon" style="width:1.75rem;height:1.75rem;font-size:0.9rem">${role === 'kitchen' ? icons.chef : icons.waiter}</div>
+        <div class="sidebar-logo-icon" style="width:1.75rem;height:1.75rem;font-size:0.9rem">${portalIcon}</div>
         <div>
-          <div style="font-weight:700">${role === 'kitchen' ? 'Kitchen' : 'Waiter'} Portal</div>
+          <div style="font-weight:700">${portalLabel} Portal</div>
           <div style="font-size:0.75rem;color:var(--text-muted)">${fullName}</div>
         </div>
       </div>
@@ -1151,6 +1499,7 @@ function renderStaffPortal() {
   `;
   showPage('staff');
 }
+
 
 function renderWaiterView() {
   const active    = STATE.orders.filter(o => o.status === 'active');
@@ -1384,7 +1733,7 @@ function waiterOpenTableModal(tableId) {
     <button class="btn btn-outline" onclick="closeModal('waiter-table-modal')">Close</button>
     <button class="btn btn-outline" style="color:#dc2626;border-color:#dc2626" onclick="wtmCancelOrder(${order.id})">Cancel Order</button>
     <button class="btn btn-primary" onclick="wtmCompleteAndPay(${order.id}, ${order.total}, ${t.number})">
-      ${icons.check} Complete & Pay
+      ${icons.check} Complete Order
     </button>
   ` : `
     <button class="btn btn-outline" onclick="closeModal('waiter-table-modal')">Cancel</button>
@@ -1397,51 +1746,22 @@ function waiterOpenTableModal(tableId) {
 
 // ── Waiter Complete Order & Pay ──────────────────────────────────────────────
 async function wtmCompleteAndPay(orderId, amount, tableNum) {
+  const order = STATE.orders.find(o => o.id === orderId);
+  const notReady = (order?.items || []).filter(i => !['ready','served'].includes(i.status));
+  if (notReady.length > 0) {
+    const names = notReady.map(i => i.menu_item_name).join(', ');
+    toast(`Kitchen hasn't finished yet: ${names}`, 'error');
+    return;
+  }
+  if (!confirm(`Complete order for Table ${tableNum} and send to cashier?`)) return;
   try {
     await api.patch(`/orders/orders/${orderId}/complete/`);
     const [orders, tables] = await Promise.all([api.get('/orders/orders/'), api.get('/orders/tables/')]);
     STATE.orders = orders.results ?? orders;
     STATE.tables = tables.results ?? tables;
-    toast('Order completed!');
+    toast('Order completed — sent to cashier for payment!');
     closeModal('waiter-table-modal');
-    // ensure payment modals exist in DOM
-    if (!document.getElementById('payment-modal')) {
-      document.body.insertAdjacentHTML('beforeend', `
-        <div id="payment-modal" class="modal-overlay hidden">
-          <div class="modal">
-            <div class="modal-header">
-              <div><div class="modal-title" id="pm-title">Collect Payment</div><div class="modal-desc" id="pm-desc"></div></div>
-              <button class="modal-close" onclick="closeModal('payment-modal')">✕</button>
-            </div>
-            <div class="modal-body" id="pm-body"></div>
-            <div class="modal-footer">
-              <button class="btn btn-outline" onclick="closeModal('payment-modal')">Cancel</button>
-              <button class="btn btn-primary" onclick="submitPayment()">${icons.payment} Confirm Payment</button>
-            </div>
-          </div>
-        </div>
-      `);
-    }
-    if (!document.getElementById('qr-modal')) {
-      document.body.insertAdjacentHTML('beforeend', `
-        <div id="qr-modal" class="modal-overlay hidden">
-          <div class="modal" style="max-width:420px">
-            <div class="modal-header">
-              <div><div class="modal-title">QR Payment Code</div><div class="modal-desc" id="qr-desc"></div></div>
-              <button class="modal-close" onclick="closeModal('qr-modal')">✕</button>
-            </div>
-            <div class="modal-body" id="qr-body" style="text-align:center"></div>
-            <div class="modal-footer">
-              <button class="btn btn-outline" onclick="closeModal('qr-modal')">Close</button>
-              <button class="btn btn-primary" onclick="markQRPaid()">${icons.check} Mark as Paid</button>
-            </div>
-          </div>
-        </div>
-      `);
-    }
     renderWaiterView();
-    // open payment modal after a short delay so DOM is ready
-    setTimeout(() => openPaymentModal(orderId, amount, tableNum), 100);
   } catch { toast('Failed to complete order', 'error'); }
 }
 
@@ -1918,8 +2238,9 @@ async function renderPayments() {
               `).join('')}
               <div class="order-total"><span>Bill Total</span><span style="color:var(--orange);font-size:1.1rem">NRs ${parseFloat(o.total).toFixed(2)}</span></div>
               <div class="order-actions" style="flex-direction:column;gap:0.5rem">
-                <button class="btn btn-primary w-full" onclick="openPaymentModal(${o.id}, ${o.total}, ${o.table_number})">${icons.payment} Collect Payment</button>
-                <button class="btn btn-outline w-full" style="font-size:0.8rem" onclick="openQRModal(${o.id}, ${o.total}, ${o.table_number})">${icons.qr} Show QR Code</button>
+                <div style="text-align:center;padding:0.5rem;background:var(--orange-light);border-radius:var(--radius);font-size:0.85rem;color:var(--orange);font-weight:600">
+                  Awaiting cashier payment
+                </div>
               </div>
             </div>
           </div>
@@ -2185,9 +2506,8 @@ async function injectWaiterPaymentButtons() {
                 </div>
               `).join('')}
               <div class="order-total"><span>Total Bill</span><span style="color:var(--orange);font-weight:800">NRs ${parseFloat(o.total).toFixed(2)}</span></div>
-              <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
-                <button class="btn btn-primary w-full" onclick="waiterCollectPayment(${o.id}, ${o.total}, ${o.table_number})">${icons.payment} Collect</button>
-                <button class="btn btn-outline w-full" onclick="openQRModal(${o.id}, ${o.total}, ${o.table_number})">${icons.qr} QR</button>
+              <div style="text-align:center;padding:0.5rem;background:var(--orange-light);border-radius:var(--radius);font-size:0.85rem;color:var(--orange);font-weight:600;margin-top:0.75rem">
+                  Awaiting cashier payment
               </div>
             </div>
           </div>
@@ -2234,6 +2554,3 @@ async function injectWaiterPaymentButtons() {
   } catch(e) { console.error('Payment buttons error', e); }
 }
 
-function waiterCollectPayment(orderId, amount, tableNum) {
-  openPaymentModal(orderId, amount, tableNum);
-}

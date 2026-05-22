@@ -63,10 +63,19 @@ class OrderViewSet(viewsets.ModelViewSet):
     def complete(self, request, pk=None):
         """PATCH /api/orders/orders/{id}/complete/"""
         order = self.get_object()
+    
+        # Check all items are ready or served
+        not_ready = order.items.exclude(status__in=['ready', 'served'])
+        if not_ready.exists():
+            item_names = ', '.join(i.menu_item.name for i in not_ready)
+            return Response(
+                {'error': f'Cannot complete order. These items are not ready yet: {item_names}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
         order.status = 'completed'
         order.completed_at = timezone.now()
         order.save()
-        # Free the table
         order.table.status = 'available'
         order.table.save()
         return Response(OrderSerializer(order).data)

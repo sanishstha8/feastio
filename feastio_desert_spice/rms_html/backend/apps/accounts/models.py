@@ -7,6 +7,7 @@ class User(AbstractUser):
         MANAGER = 'manager', 'Manager'
         WAITER = 'waiter', 'Waiter'
         KITCHEN = 'kitchen', 'Kitchen'
+        CASHIER = 'cashier', 'Cashier'
 
     role = models.CharField(
         max_length=20,
@@ -23,4 +24,4 @@ class User(AbstractUser):
 
     @property
     def is_staff_member(self):
-        return self.role in [self.Role.WAITER, self.Role.KITCHEN]
+        return self.role in [self.Role.WAITER, self.Role.KITCHEN, self.Role.CASHIER]
