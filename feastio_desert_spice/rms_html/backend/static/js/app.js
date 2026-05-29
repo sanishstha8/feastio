@@ -1733,7 +1733,7 @@ function waiterOpenTableModal(tableId) {
     <button class="btn btn-outline" onclick="closeModal('waiter-table-modal')">Close</button>
     <button class="btn btn-outline" style="color:#dc2626;border-color:#dc2626" onclick="wtmCancelOrder(${order.id})">Cancel Order</button>
     <button class="btn btn-primary" onclick="wtmCompleteAndPay(${order.id}, ${order.total}, ${t.number})">
-      ${icons.check} Complete Order
+      ${icons.check} Complete & Pay
     </button>
   ` : `
     <button class="btn btn-outline" onclick="closeModal('waiter-table-modal')">Cancel</button>
@@ -1753,13 +1753,13 @@ async function wtmCompleteAndPay(orderId, amount, tableNum) {
     toast(`Kitchen hasn't finished yet: ${names}`, 'error');
     return;
   }
-  if (!confirm(`Complete order for Table ${tableNum} and send to cashier?`)) return;
+  if (!confirm(`Complete order for Table ${tableNum}`)) return;
   try {
     await api.patch(`/orders/orders/${orderId}/complete/`);
     const [orders, tables] = await Promise.all([api.get('/orders/orders/'), api.get('/orders/tables/')]);
     STATE.orders = orders.results ?? orders;
     STATE.tables = tables.results ?? tables;
-    toast('Order completed — sent to cashier for payment!');
+    toast('Order completed !');
     closeModal('waiter-table-modal');
     renderWaiterView();
   } catch { toast('Failed to complete order', 'error'); }
@@ -2506,8 +2506,9 @@ async function injectWaiterPaymentButtons() {
                 </div>
               `).join('')}
               <div class="order-total"><span>Total Bill</span><span style="color:var(--orange);font-weight:800">NRs ${parseFloat(o.total).toFixed(2)}</span></div>
-              <div style="text-align:center;padding:0.5rem;background:var(--orange-light);border-radius:var(--radius);font-size:0.85rem;color:var(--orange);font-weight:600;margin-top:0.75rem">
-                  Awaiting cashier payment
+              <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
+                <button class="btn btn-primary w-full" onclick="waiterCollectPayment(${o.id}, ${o.total}, ${o.table_number})">${icons.payment} Collect</button>
+                <button class="btn btn-outline w-full" onclick="openQRModal(${o.id}, ${o.total}, ${o.table_number})">${icons.qr} QR</button>
               </div>
             </div>
           </div>
@@ -2554,3 +2555,6 @@ async function injectWaiterPaymentButtons() {
   } catch(e) { console.error('Payment buttons error', e); }
 }
 
+function waiterCollectPayment(orderId, amount, tableNum) {
+  openPaymentModal(orderId, amount, tableNum);
+}
