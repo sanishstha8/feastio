@@ -51,7 +51,13 @@ class OrderViewSet(viewsets.ModelViewSet):
         status_filter = self.request.query_params.get('status')
         if status_filter:
             qs = qs.filter(status=status_filter)
-        return qs
+        from_date = self.request.query_params.get('from')
+        to_date   = self.request.query_params.get('to')
+        if from_date:
+            qs = qs.filter(created_at__date__gte=from_date)
+        if to_date:
+            qs = qs.filter(created_at__date__lte=to_date)
+        return qs.order_by('-created_at')
 
     def create(self, request, *args, **kwargs):
         serializer = CreateOrderSerializer(data=request.data)

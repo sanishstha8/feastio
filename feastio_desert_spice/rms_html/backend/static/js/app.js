@@ -1191,31 +1191,143 @@ function renderReports() {
     topItems[i.menu_item_name] = (topItems[i.menu_item_name] || 0) + i.quantity;
   }));
   const sorted = Object.entries(topItems).sort((a,b) => b[1]-a[1]).slice(0, 5);
+  const today = new Date().toISOString().split('T')[0];
 
   setInner(`
-    <div class="page-header"><div><h1>Reports</h1><p></p></div></div>
-    <div class="stats-grid">
-      <div class="stat-card"><div class="stat-label">Total Revenue</div><div class="stat-value" style="color:var(--green)">NRs ${total.toFixed(2)}</div><div class="stat-sub">From completed orders</div></div>
-      <div class="stat-card"><div class="stat-label">Completed Orders</div><div class="stat-value">${completed.length}</div><div class="stat-sub">All time</div></div>
-      <div class="stat-card"><div class="stat-label">Avg Order Value</div><div class="stat-value" style="color:var(--blue)">NRs ${avgOrder.toFixed(2)}</div></div>
-      <div class="stat-card"><div class="stat-label">Tables Available</div><div class="stat-value" style="color:var(--orange)">${STATE.tables.filter(t=>t.status==='available').length}</div><div class="stat-sub">of ${STATE.tables.length} total</div></div>
+    <div class="page-header">
+      <div><h1>Reports</h1></div>
+      <button class="btn btn-outline btn-sm" onclick="refreshDashboard()">${icons.refresh} Refresh</button>
     </div>
-    <div class="card">
-      <div class="card-header"><div class="card-title">Top Menu Items</div></div>
-      <div class="card-content">
-        ${sorted.length === 0 ? '<div class="empty-state"><p>No order data yet</p></div>' :
-          sorted.map(([name, qty], i) => `
-            <div class="order-item-row">
-              <div style="display:flex;align-items:center;gap:0.75rem">
-                <span style="width:1.5rem;height:1.5rem;background:var(--orange);color:white;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700">${i+1}</span>
-                <span style="font-weight:500">${name}</span>
+
+    <!-- Date filter card -->
+    <div class="card" style="margin-bottom:1.5rem">
+      <div class="card-content" style="display:flex;gap:1rem;align-items:flex-end;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:140px">
+          <label class="form-label">From</label>
+          <input class="form-input" type="date" id="report-from" value="${today}" style="margin:0">
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:140px">
+          <label class="form-label">To</label>
+          <input class="form-input" type="date" id="report-to" value="${today}" style="margin:0">
+        </div>
+        <button class="btn btn-primary" onclick="loadFilteredReport()">Generate Report</button>
+        <button class="btn btn-outline" onclick="loadFullReport()">All Time</button>
+      </div>
+    </div>
+
+    <div id="report-content">
+      <!-- All time stats shown by default -->
+      <div class="stats-grid">
+        <div class="stat-card"><div class="stat-label">Total Revenue</div><div class="stat-value" style="color:var(--green)">NRs ${total.toFixed(2)}</div><div class="stat-sub">All completed orders</div></div>
+        <div class="stat-card"><div class="stat-label">Completed Orders</div><div class="stat-value">${completed.length}</div><div class="stat-sub">All time</div></div>
+        <div class="stat-card"><div class="stat-label">Avg Order Value</div><div class="stat-value" style="color:var(--blue)">NRs ${avgOrder.toFixed(2)}</div></div>
+        <div class="stat-card"><div class="stat-label">Tables Available</div><div class="stat-value" style="color:var(--orange)">${STATE.tables.filter(t=>t.status==='available').length}</div><div class="stat-sub">of ${STATE.tables.length} total</div></div>
+      </div>
+      <div class="card" style="margin-top:1rem">
+        <div class="card-header"><div class="card-title">Top Menu Items (All Time)</div></div>
+        <div class="card-content">
+          ${sorted.length === 0 ? '<div class="empty-state"><p>No order data yet</p></div>' :
+            sorted.map(([name, qty], i) => `
+              <div class="order-item-row">
+                <div style="display:flex;align-items:center;gap:0.75rem">
+                  <span style="width:1.5rem;height:1.5rem;background:var(--orange);color:white;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700">${i+1}</span>
+                  <span style="font-weight:500">${name}</span>
+                </div>
+                <span class="badge badge-orange">${qty} ordered</span>
               </div>
-              <span class="badge badge-orange">${qty} ordered</span>
-            </div>
-          `).join('')}
+            `).join('')}
+        </div>
       </div>
     </div>
   `);
+}
+
+async function loadFilteredReport() {
+  const from = document.getElementById('report-from').value;
+  const to   = document.getElementById('report-to').value;
+  if (!from || !to) { toast('Please select both dates', 'error'); return; }
+  if (from > to) { toast('From date must be before To date', 'error'); return; }
+  const resultsEl = document.getElementById('report-content');
+  resultsEl.innerHTML = `<div class="empty-state"><p>Loading...</p></div>`;
+  try {
+    const data = await api.get(`/orders/payments/?from=${from}&to=${to}`);
+    const payments = data.results ?? data;
+    const paid     = payments.filter(p => p.status === 'paid');
+    const refunded = payments.filter(p => p.status === 'refunded');
+    const revenue  = paid.reduce((s, p) => s + parseFloat(p.grand_total), 0);
+    const tips     = paid.reduce((s, p) => s + parseFloat(p.tip || 0), 0);
+    const discounts= paid.reduce((s, p) => s + parseFloat(p.discount || 0), 0);
+    const avg      = paid.length ? revenue / paid.length : 0;
+    const cashCount= paid.filter(p => p.method === 'cash').length;
+    const cardCount= paid.filter(p => p.method === 'card').length;
+    const qrCount  = paid.filter(p => p.method === 'qr').length;
+
+    resultsEl.innerHTML = `
+      <div style="padding:0.5rem 0 1rem;font-size:0.85rem;color:var(--text-muted)">
+        Showing results from <strong>${from}</strong> to <strong>${to}</strong>
+      </div>
+      <div class="stats-grid" style="margin-bottom:1rem">
+        <div class="stat-card"><div class="stat-label">Revenue</div><div class="stat-value" style="color:var(--green)">NRs ${revenue.toFixed(2)}</div><div class="stat-sub">${paid.length} payments</div></div>
+        <div class="stat-card"><div class="stat-label">Avg Bill</div><div class="stat-value" style="color:var(--blue)">NRs ${avg.toFixed(2)}</div></div>
+        <div class="stat-card"><div class="stat-label">Tips Collected</div><div class="stat-value" style="color:var(--green)">NRs ${tips.toFixed(2)}</div></div>
+        <div class="stat-card"><div class="stat-label">Discounts Given</div><div class="stat-value" style="color:#dc2626">NRs ${discounts.toFixed(2)}</div></div>
+      </div>
+      <div class="stats-grid" style="margin-bottom:1.5rem">
+        <div class="stat-card"><div class="stat-label">Cash Payments</div><div class="stat-value">${cashCount}</div></div>
+        <div class="stat-card"><div class="stat-label">Card Payments</div><div class="stat-value">${cardCount}</div></div>
+        <div class="stat-card"><div class="stat-label">QR Payments</div><div class="stat-value">${qrCount}</div></div>
+        <div class="stat-card"><div class="stat-label">Refunds</div><div class="stat-value" style="color:#dc2626">${refunded.length}</div></div>
+      </div>
+      <div class="card">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+          <div class="card-title">Payment Details</div>
+          <span style="font-size:0.8rem;color:var(--text-muted)">${paid.length} record${paid.length !== 1 ? 's' : ''}</span>
+        </div>
+        <div class="card-content" id="report-payment-list">
+          ${paid.length === 0 ? '<div class="empty-state"><p>No payments in this period</p></div>' : ''}
+        </div>
+        <div id="report-payment-pagination" style="display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:1rem;border-top:1px solid var(--border)"></div>
+      </div>
+    `;
+    window._reportPaidPayments = paid;
+    renderReportPaymentPage(paid, 1);
+  } catch { toast('Failed to load report', 'error'); }
+}
+
+const REPORT_PAGE_SIZE = 8;
+
+function renderReportPaymentPage(payments, page) {
+  const totalPages = Math.ceil(payments.length / REPORT_PAGE_SIZE) || 1;
+  page = Math.max(1, Math.min(page, totalPages));
+  const start = (page - 1) * REPORT_PAGE_SIZE;
+  const slice = payments.slice(start, start + REPORT_PAGE_SIZE);
+  const listEl = document.getElementById('report-payment-list');
+  const pagEl  = document.getElementById('report-payment-pagination');
+  if (!listEl) return;
+  if (payments.length === 0) return;
+  listEl.innerHTML = slice.map(p => `
+    <div class="order-item-row">
+      <div>
+        <div style="font-weight:600">Order #${p.order} — Table ${p.table_number}</div>
+        <div style="font-size:0.75rem;color:var(--text-muted)">
+          ${new Date(p.paid_at||p.created_at).toLocaleString()} · ${p.method.toUpperCase()}
+        </div>
+        ${parseFloat(p.tip||0) > 0 ? `<div style="font-size:0.75rem;color:var(--green)">Tip: NRs ${parseFloat(p.tip).toFixed(2)}</div>` : ''}
+        ${parseFloat(p.discount||0) > 0 ? `<div style="font-size:0.75rem;color:#dc2626">Discount: NRs ${parseFloat(p.discount).toFixed(2)}</div>` : ''}
+      </div>
+      <div style="font-weight:700">NRs ${parseFloat(p.grand_total).toFixed(2)}</div>
+    </div>
+  `).join('');
+  if (pagEl) {
+    pagEl.innerHTML = totalPages <= 1 ? '' :
+      `<button class="btn btn-outline btn-sm" ${page <= 1 ? 'disabled' : ''} onclick="renderReportPaymentPage(window._reportPaidPayments, ${page - 1})">&#8592; Prev</button>
+       <span style="font-size:0.85rem;color:var(--text-muted);padding:0 0.5rem">Page ${page} of ${totalPages}</span>
+       <button class="btn btn-outline btn-sm" ${page >= totalPages ? 'disabled' : ''} onclick="renderReportPaymentPage(window._reportPaidPayments, ${page + 1})">Next &#8594;</button>`;
+  }
+}
+
+function loadFullReport() {
+  renderReports();
 }
 
 // ── Cashier Portal ────────────────────────────────────────────────────────────
@@ -2681,7 +2793,12 @@ async function refundPayment(paymentId) {
 
 // ── WAITER: Payment button on orders ─────────────────────────────────────────
 
-
+// Override renderWaiterView to also inject payment buttons after render
+const _origRenderWaiterView = renderWaiterView;
+renderWaiterView = function() {
+  _origRenderWaiterView();
+  injectWaiterPaymentButtons();
+};
 async function injectWaiterPaymentButtons() {
   // fetch completed orders awaiting payment
   try {
