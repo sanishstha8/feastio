@@ -297,62 +297,102 @@ async function refreshDashboard() {
 
 // ── Tables Page ───────────────────────────────────────────────────────────────
 // ── Tables & Orders (Combined) ────────────────────────────────────────────────
-function renderTablesOrders() {
-  const active = STATE.orders.filter(o => o.status === 'active');
-  const occupied  = STATE.tables.filter(t => t.status === 'occupied').length;
-  const available = STATE.tables.filter(t => t.status === 'available').length;
-  const reserved  = STATE.tables.filter(t => t.status === 'reserved').length;
+function renderTablesOrders(tab = 'live') {
+  const active   = STATE.orders.filter(o => o.status === 'active');
+  const occupied = STATE.tables.filter(t => t.status === 'occupied').length;
+  const available= STATE.tables.filter(t => t.status === 'available').length;
+  const reserved = STATE.tables.filter(t => t.status === 'reserved').length;
 
   setInner(`
     <div class="page-header">
-      <div><h1>Tables & Orders</h1><p></p></div>
+      <div><h1>Tables & Orders</h1></div>
       <div style="display:flex;gap:0.5rem">
         <button class="btn btn-outline btn-sm" onclick="refreshTablesOrders()">${icons.refresh} Refresh</button>
         <button class="btn btn-primary" onclick="openNewOrderModal()">${icons.plus} New Order</button>
       </div>
     </div>
 
-    <!-- Summary strip -->
-    <div style="display:flex;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap">
-      <div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 1rem;background:white;border:1px solid var(--border);border-radius:var(--radius);font-size:var(--text-sm)">
-        <span class="table-status-dot dot-green"></span> <strong>${available}</strong> available
-      </div>
-      <div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 1rem;background:white;border:1px solid var(--border);border-radius:var(--radius);font-size:var(--text-sm)">
-        <span class="table-status-dot dot-red"></span> <strong>${occupied}</strong> occupied
-      </div>
-      <div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 1rem;background:white;border:1px solid var(--border);border-radius:var(--radius);font-size:var(--text-sm)">
-        <span class="table-status-dot dot-yellow"></span> <strong>${reserved}</strong> reserved
-      </div>
-      <div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 1rem;background:white;border:1px solid var(--border);border-radius:var(--radius);font-size:var(--text-sm)">
-         <strong>${active.length}</strong> active order${active.length !== 1 ? 's' : ''}
-      </div>
+    <!-- Tabs -->
+    <div style="display:flex;gap:0;margin-bottom:1.5rem;border-bottom:2px solid var(--border)">
+      <button onclick="renderTablesOrders('live')"
+        style="padding:0.6rem 1.25rem;font-weight:600;font-size:var(--text-sm);border:none;background:none;cursor:pointer;border-bottom:${tab==='live'?'2px solid var(--orange);color:var(--orange);margin-bottom:-2px':'2px solid transparent;color:var(--text-muted)'}">
+        Live Orders
+      </button>
+      <button onclick="renderTablesOrders('history')"
+        style="padding:0.6rem 1.25rem;font-weight:600;font-size:var(--text-sm);border:none;background:none;cursor:pointer;border-bottom:${tab==='history'?'2px solid var(--orange);color:var(--orange);margin-bottom:-2px':'2px solid transparent;color:var(--text-muted)'}">
+        Order History
+      </button>
     </div>
 
-    <!-- Tables grid -->
-    <div class="tables-grid" style="margin-bottom:2.5rem">
-      ${STATE.tables.map(t => renderTableCard(t)).join('')}
-    </div>
-
-    <!-- Active orders -->
-    ${active.length > 0 ? `
-      <div style="margin-bottom:1rem;display:flex;align-items:center;justify-content:space-between">
-        <h2 style="font-size:1.1rem;font-weight:700">Active Orders</h2>
-        <span style="font-size:var(--text-sm);color:var(--text-muted)">${active.length} order${active.length!==1?'s':''} in progress</span>
+    ${tab === 'live' ? `
+      <!-- Summary strip -->
+      <div style="display:flex;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 1rem;background:white;border:1px solid var(--border);border-radius:var(--radius);font-size:var(--text-sm)">
+          <span class="table-status-dot dot-green"></span> <strong>${available}</strong> available
+        </div>
+        <div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 1rem;background:white;border:1px solid var(--border);border-radius:var(--radius);font-size:var(--text-sm)">
+          <span class="table-status-dot dot-red"></span> <strong>${occupied}</strong> occupied
+        </div>
+        <div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 1rem;background:white;border:1px solid var(--border);border-radius:var(--radius);font-size:var(--text-sm)">
+          <span class="table-status-dot dot-yellow"></span> <strong>${reserved}</strong> reserved
+        </div>
+        <div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 1rem;background:white;border:1px solid var(--border);border-radius:var(--radius);font-size:var(--text-sm)">
+          <strong>${active.length}</strong> active order${active.length !== 1 ? 's' : ''}
+        </div>
       </div>
-      <div class="orders-grid">
-        ${active.map(o => renderOrderCard(o)).join('')}
+      <div class="tables-grid" style="margin-bottom:2.5rem">
+        ${STATE.tables.map(t => renderTableCard(t)).join('')}
       </div>
+      ${active.length > 0 ? `
+        <div style="margin-bottom:1rem;display:flex;align-items:center;justify-content:space-between">
+          <h2 style="font-size:1.1rem;font-weight:700">Active Orders</h2>
+          <span style="font-size:var(--text-sm);color:var(--text-muted)">${active.length} order${active.length!==1?'s':''} in progress</span>
+        </div>
+        <div class="orders-grid">
+          ${active.map(o => renderOrderCard(o)).join('')}
+        </div>
+      ` : `
+        <div style="text-align:center;padding:2rem;color:var(--text-muted);background:white;border:1px dashed var(--border);border-radius:var(--radius)">
+          <p style="font-size:1rem;margin-bottom:0.5rem">No active orders right now</p>
+          <p style="font-size:var(--text-sm)">Click a table or press <strong>New Order</strong> to get started</p>
+        </div>
+      `}
+      ${tableDetailModal()}
+      ${newOrderModal()}
     ` : `
-      <div style="text-align:center;padding:2rem;color:var(--text-muted);background:white;border:1px dashed var(--border);border-radius:var(--radius)">
-        <p style="font-size:1rem;margin-bottom:0.5rem">No active orders right now</p>
-        <p style="font-size:var(--text-sm)">Click a table or press <strong>New Order</strong> to get started</p>
+      <!-- Order History tab -->
+      <div class="card" style="margin-bottom:1.5rem">
+        <div class="card-content" style="display:flex;gap:1rem;align-items:flex-end;flex-wrap:wrap">
+          <div class="form-group" style="margin:0;flex:1;min-width:120px">
+            <label class="form-label">Status</label>
+            <select class="form-select" id="oh-status" style="margin:0">
+              <option value="">All past</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;flex:1;min-width:130px">
+            <label class="form-label">From</label>
+            <input class="form-input" type="date" id="oh-from" style="margin:0">
+          </div>
+          <div class="form-group" style="margin:0;flex:1;min-width:130px">
+            <label class="form-label">To</label>
+            <input class="form-input" type="date" id="oh-to" style="margin:0">
+          </div>
+          <div class="form-group" style="margin:0;flex:1;min-width:100px">
+            <label class="form-label">Table #</label>
+            <input class="form-input" type="number" id="oh-table" placeholder="Any" style="margin:0">
+          </div>
+          <button class="btn btn-primary" onclick="loadOrderHistory()">Search</button>
+        </div>
+      </div>
+      <div id="oh-results">
+        <div class="empty-state"><p>Select filters and click Search.</p></div>
       </div>
     `}
-
-    <!-- Modals -->
-    ${tableDetailModal()}
-    ${newOrderModal()}
   `);
+
+  if (tab === 'history') loadOrderHistory();
 }
 
 function renderTableCard(t) {
@@ -989,6 +1029,7 @@ function staffFormModal(s = null) {
               <select class="form-select" id="staff-role">
                 <option value="waiter">Waiter</option>
                 <option value="kitchen">Kitchen</option>
+                <option value="cashier">Cashier</option>
                 <option value="manager">Manager</option>
               </select>
             </div>
@@ -1506,13 +1547,57 @@ function renderWaiterView() {
   const available = STATE.tables.filter(t => t.status === 'available');
 
   document.getElementById('staff-view').innerHTML = `
-    <div class="stats-grid" style="grid-template-columns:repeat(3,1fr)">
+    <div class="stats-grid" style="grid-template-columns:repeat(4,1fr)">
       <div class="stat-card"><div class="stat-label">Available Tables</div><div class="stat-value" style="color:var(--green)">${available.length}</div></div>
       <div class="stat-card"><div class="stat-label">Active Orders</div><div class="stat-value" style="color:var(--orange)">${active.length}</div></div>
       <div class="stat-card" style="display:flex;align-items:center;justify-content:center">
         <button class="btn btn-primary w-full" onclick="openWaiterOrderModal()">${icons.plus} New Order</button>
       </div>
+      <div class="stat-card" style="display:flex;align-items:center;justify-content:center">
+        <button class="btn btn-outline w-full" onclick="toggleWaiterHistory()">${icons.orders} Order History</button>
+      </div>
     </div>
+
+    <!-- Order History (hidden by default) -->
+<div id="waiter-history-section" class="hidden" style="margin-bottom:2rem">
+
+  <!-- Header -->
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+    <h2 style="font-size:1.1rem;font-weight:700">Order History</h2>
+    <button class="btn btn-outline btn-sm" onclick="toggleWaiterHistory()">✕ Close</button>
+  </div>
+
+  <!-- Filters -->
+  <div style="background:white;border:1px solid var(--border);border-radius:var(--radius);padding:1rem;margin-bottom:1rem">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:0.75rem;align-items:flex-end">
+      <div class="form-group" style="margin:0">
+        <label class="form-label">From</label>
+        <input class="form-input" type="date" id="wh-from" style="margin:0">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">To</label>
+        <input class="form-input" type="date" id="wh-to" style="margin:0">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Status</label>
+        <select class="form-select" id="wh-status" style="margin:0">
+          <option value="">All past</option>
+          <option value="completed">Completed</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" onclick="loadWaiterHistory(1)" style="white-space:nowrap">
+        Search
+      </button>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div id="wh-results">
+    <div class="empty-state"><p>Select dates and click Search.</p></div>
+  </div>
+
+</div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
       <h2 style="font-size:1rem;font-weight:600">Tables <span style="font-size:0.75rem;font-weight:400;color:var(--text-muted)">(tap a table to manage)</span></h2>
       <button class="btn btn-outline btn-sm" onclick="loadStaffData()">${icons.refresh} Refresh</button>
@@ -1569,6 +1654,132 @@ function renderWaiterView() {
   `;
 }
 
+function toggleWaiterHistory() {
+  const section = document.getElementById('waiter-history-section');
+  if (!section) return;
+  const isHidden = section.classList.contains('hidden');
+  section.classList.toggle('hidden');
+  if (isHidden) loadWaiterHistory();
+}
+// ── Waiter Order History with Pagination ──────────────────────────────────────
+let _whOrders  = [];
+let _whPage    = 1;
+const _whPageSize = 8;
+
+async function loadWaiterHistory(page = 1) {
+  const fromVal   = document.getElementById('wh-from')?.value;
+  const toVal     = document.getElementById('wh-to')?.value;
+  const statusVal = document.getElementById('wh-status')?.value;
+  const resultsEl = document.getElementById('wh-results');
+  if (!resultsEl) return;
+
+  if (page === 1) {
+    resultsEl.innerHTML = `<div class="empty-state"><p>Loading...</p></div>`;
+    try {
+      let url = '/orders/orders/';
+      if (statusVal) url += `?status=${statusVal}`;
+      const data = await api.get(url);
+      _whOrders = (data.results ?? data).filter(o => o.status !== 'active');
+      if (fromVal) _whOrders = _whOrders.filter(o => new Date(o.created_at) >= new Date(fromVal));
+      if (toVal)   _whOrders = _whOrders.filter(o => new Date(o.created_at) <= new Date(toVal + 'T23:59:59'));
+    } catch {
+      resultsEl.innerHTML = `<div class="empty-state"><p style="color:#dc2626">Failed to load.</p></div>`;
+      return;
+    }
+  }
+
+  _whPage = page;
+
+  if (_whOrders.length === 0) {
+    resultsEl.innerHTML = `<div class="empty-state"><p>No orders found.</p></div>`;
+    return;
+  }
+
+  const totalPages = Math.ceil(_whOrders.length / _whPageSize);
+  const start      = (page - 1) * _whPageSize;
+  const end        = start + _whPageSize;
+  const pageOrders = _whOrders.slice(start, end);
+
+  resultsEl.innerHTML = `
+    <div style="font-size:var(--text-sm);color:var(--text-muted);margin-bottom:0.75rem">
+      Showing ${start + 1}–${Math.min(end, _whOrders.length)} of ${_whOrders.length} orders
+    </div>
+
+    <div class="card">
+      <div class="card-content">
+        ${pageOrders.map(o => `
+          <div class="order-item-row" style="flex-direction:column;align-items:stretch;padding:0.75rem 0;cursor:pointer"
+            onclick="toggleOrderHistoryDetail('wh-${o.id}')">
+
+            <!-- Top row — looks exactly like payment history -->
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div>
+                <div style="font-weight:600">
+                  Order #${o.id} — Table ${o.table_number}
+                </div>
+                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.15rem">
+                  ${new Date(o.created_at).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}
+                  · ${(o.items||[]).length} item${(o.items||[]).length !== 1 ? 's' : ''}
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:0.75rem;flex-shrink:0">
+                <div style="text-align:right">
+                  <div style="font-weight:700">NRs ${parseFloat(o.total).toFixed(2)}</div>
+                  <span class="badge ${o.status === 'completed' ? 'badge-green' : 'badge-red'}">${o.status}</span>
+                </div>
+                <span style="font-size:0.75rem;color:var(--text-muted)" id="oh-toggle-wh-${o.id}">▼</span>
+              </div>
+            </div>
+
+            <!-- Expandable items section -->
+            <div id="oh-detail-wh-${o.id}" class="hidden"
+              style="margin-top:0.75rem;padding:0.75rem;background:var(--bg);border-radius:var(--radius);border:1px solid var(--border)">
+              ${(o.items||[]).map(item => `
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:0.3rem 0;border-bottom:1px solid var(--border)">
+                  <span style="font-size:var(--text-sm)">${item.quantity}x ${item.menu_item_name}</span>
+                  <span style="font-size:var(--text-sm);font-weight:600">NRs ${(parseFloat(item.price) * item.quantity).toFixed(2)}</span>
+                </div>
+              `).join('')}
+              <div style="display:flex;justify-content:space-between;font-weight:700;padding-top:0.5rem;margin-top:0.25rem">
+                <span>Total</span>
+                <span>NRs ${parseFloat(o.total).toFixed(2)}</span>
+              </div>
+              ${o.completed_at ? `
+                <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.35rem">
+                  Completed: ${new Date(o.completed_at).toLocaleString()}
+                </div>
+              ` : ''}
+            </div>
+
+          </div>
+        `).join('')}
+      </div>
+    </div>
+
+    <!-- Pagination -->
+    ${totalPages > 1 ? `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:1rem;flex-wrap:wrap;gap:0.5rem">
+        <div style="font-size:var(--text-sm);color:var(--text-muted)">Page ${page} of ${totalPages}</div>
+        <div style="display:flex;gap:0.35rem">
+          <button class="btn btn-outline btn-sm" onclick="loadWaiterHistory(${page - 1})" ${page === 1 ? 'disabled' : ''}>‹ Prev</button>
+          ${Array.from({length: totalPages}, (_, i) => i + 1)
+            .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
+            .reduce((acc, p, idx, arr) => {
+              if (idx > 0 && p - arr[idx - 1] > 1) acc.push('...');
+              acc.push(p);
+              return acc;
+            }, [])
+            .map(p => p === '...'
+              ? `<span style="padding:0 0.25rem;color:var(--text-muted)">…</span>`
+              : `<button class="btn btn-sm ${p === page ? 'btn-primary' : 'btn-outline'}"
+                  onclick="loadWaiterHistory(${p})">${p}</button>`
+            ).join('')}
+          <button class="btn btn-outline btn-sm" onclick="loadWaiterHistory(${page + 1})" ${page === totalPages ? 'disabled' : ''}>Next ›</button>
+        </div>
+      </div>
+    ` : ''}
+  `;
+}
 // ── Waiter Table Modal ────────────────────────────────────────────────────────
 function waiterTableModal() {
   return `
@@ -2469,12 +2680,7 @@ async function refundPayment(paymentId) {
 }
 
 // ── WAITER: Payment button on orders ─────────────────────────────────────────
-const _origRenderWaiterView = renderWaiterView;
-renderWaiterView = function() {
-  _origRenderWaiterView();
-  // After render, patch each order card to show bill + QR button for completed orders
-  injectWaiterPaymentButtons();
-};
+
 
 async function injectWaiterPaymentButtons() {
   // fetch completed orders awaiting payment
@@ -2557,4 +2763,137 @@ async function injectWaiterPaymentButtons() {
 
 function waiterCollectPayment(orderId, amount, tableNum) {
   openPaymentModal(orderId, amount, tableNum);
+}
+
+// ── Manager Order History with Pagination ─────────────────────────────────────
+let _ohOrders = [];
+let _ohPage   = 1;
+const _ohPageSize = 10;
+
+async function loadOrderHistory(page = 1) {
+  const statusVal = document.getElementById('oh-status')?.value;
+  const fromVal   = document.getElementById('oh-from')?.value;
+  const toVal     = document.getElementById('oh-to')?.value;
+  const tableVal  = document.getElementById('oh-table')?.value;
+  const resultsEl = document.getElementById('oh-results');
+  if (!resultsEl) return;
+
+  // Only fetch from API on first load or when filters change
+  if (page === 1) {
+    resultsEl.innerHTML = `<div class="empty-state"><p>Loading...</p></div>`;
+    try {
+      let url = '/orders/orders/';
+      if (statusVal) url += `?status=${statusVal}`;
+      const data = await api.get(url);
+      _ohOrders = (data.results ?? data).filter(o => o.status !== 'active');
+      if (fromVal)  _ohOrders = _ohOrders.filter(o => new Date(o.created_at) >= new Date(fromVal));
+      if (toVal)    _ohOrders = _ohOrders.filter(o => new Date(o.created_at) <= new Date(toVal + 'T23:59:59'));
+      if (tableVal) _ohOrders = _ohOrders.filter(o => String(o.table_number) === String(tableVal));
+    } catch {
+      resultsEl.innerHTML = `<div class="empty-state"><p style="color:#dc2626">Failed to load orders.</p></div>`;
+      return;
+    }
+  }
+
+  _ohPage = page;
+
+  if (_ohOrders.length === 0) {
+    resultsEl.innerHTML = `<div class="empty-state"><p>No orders found for the selected filters.</p></div>`;
+    return;
+  }
+
+  // Pagination calculations
+  const totalPages = Math.ceil(_ohOrders.length / _ohPageSize);
+  const start      = (page - 1) * _ohPageSize;
+  const end        = start + _ohPageSize;
+  const pageOrders = _ohOrders.slice(start, end);
+
+  // Summary stats (always over full results)
+  const completed = _ohOrders.filter(o => o.status === 'completed');
+  const cancelled = _ohOrders.filter(o => o.status === 'cancelled');
+  const totalRev  = completed.reduce((s, o) => s + parseFloat(o.total), 0);
+
+  resultsEl.innerHTML = `
+    <div class="stats-grid" style="margin-bottom:1.5rem">
+      <div class="stat-card"><div class="stat-label">Total Found</div><div class="stat-value">${_ohOrders.length}</div></div>
+      <div class="stat-card"><div class="stat-label">Completed</div><div class="stat-value" style="color:var(--green)">${completed.length}</div></div>
+      <div class="stat-card"><div class="stat-label">Cancelled</div><div class="stat-value" style="color:#dc2626">${cancelled.length}</div></div>
+      <div class="stat-card"><div class="stat-label">Revenue</div><div class="stat-value" style="color:var(--green)">NRs ${totalRev.toFixed(2)}</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-content" style="padding:0">
+        ${pageOrders.map(o => `
+          <div style="padding:1rem;border-bottom:1px solid var(--border);cursor:pointer"
+            onclick="toggleOrderHistoryDetail(${o.id})"
+            onmouseover="this.style.background='var(--bg)'"
+            onmouseout="this.style.background=''">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem">
+              <div style="display:flex;align-items:center;gap:0.75rem">
+                <span style="font-weight:700">Order #${o.id}</span>
+                <span class="badge ${o.status==='completed'?'badge-green':'badge-red'}">${o.status}</span>
+                <span style="font-size:0.8rem;color:var(--text-muted)">Table ${o.table_number}</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:1rem">
+                <span style="font-weight:700;color:var(--orange)">NRs ${parseFloat(o.total).toFixed(2)}</span>
+                <span style="font-size:0.75rem;color:var(--text-muted)">${new Date(o.created_at).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>
+                <span style="font-size:0.75rem;color:var(--text-muted)" id="oh-toggle-${o.id}">▼ Details</span>
+              </div>
+            </div>
+            <div id="oh-detail-${o.id}" class="hidden" style="margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--border)">
+              ${(o.items||[]).map(item => `
+                <div class="order-item-row" style="padding:0.25rem 0">
+                  <span style="font-size:var(--text-sm)">${item.quantity}x ${item.menu_item_name}</span>
+                  <span style="font-size:var(--text-sm);font-weight:600">NRs ${(parseFloat(item.price)*item.quantity).toFixed(2)}</span>
+                </div>
+              `).join('')}
+              <div style="display:flex;justify-content:space-between;font-weight:700;margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border)">
+                <span>Total</span><span>NRs ${parseFloat(o.total).toFixed(2)}</span>
+              </div>
+              ${o.completed_at ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem">Completed: ${new Date(o.completed_at).toLocaleString()}</div>` : ''}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+
+    <!-- Pagination controls -->
+    ${totalPages > 1 ? `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:1rem;flex-wrap:wrap;gap:0.5rem">
+        <div style="font-size:var(--text-sm);color:var(--text-muted)">
+          Showing ${start + 1}–${Math.min(end, _ohOrders.length)} of ${_ohOrders.length} orders
+        </div>
+        <div style="display:flex;gap:0.35rem;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-outline btn-sm" onclick="loadOrderHistory(1)" ${page===1?'disabled':''}>««</button>
+          <button class="btn btn-outline btn-sm" onclick="loadOrderHistory(${page-1})" ${page===1?'disabled':''}>‹ Prev</button>
+          ${Array.from({length: totalPages}, (_,i) => i+1)
+            .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
+            .reduce((acc, p, idx, arr) => {
+              if (idx > 0 && p - arr[idx-1] > 1) acc.push('...');
+              acc.push(p);
+              return acc;
+            }, [])
+            .map(p => p === '...'
+              ? `<span style="padding:0 0.25rem;color:var(--text-muted)">…</span>`
+              : `<button class="btn btn-sm ${p===page?'btn-primary':'btn-outline'}"
+                  onclick="loadOrderHistory(${p})">${p}</button>`
+            ).join('')}
+          <button class="btn btn-outline btn-sm" onclick="loadOrderHistory(${page+1})" ${page===totalPages?'disabled':''}>Next ›</button>
+          <button class="btn btn-outline btn-sm" onclick="loadOrderHistory(${totalPages})" ${page===totalPages?'disabled':''}>»»</button>
+        </div>
+      </div>
+    ` : ''}
+  `;
+}
+
+function toggleOrderHistoryDetail(orderId) {
+  // Handles both manager history (oh-detail-123) and waiter history (oh-detail-wh-123)
+  const detail = document.getElementById(`oh-detail-${orderId}`) ||
+                 document.getElementById(`oh-detail-wh-${orderId}`);
+  const toggle = document.getElementById(`oh-toggle-${orderId}`) ||
+                 document.getElementById(`oh-toggle-wh-${orderId}`);
+  if (!detail) return;
+  const isHidden = detail.classList.contains('hidden');
+  detail.classList.toggle('hidden');
+  if (toggle) toggle.textContent = isHidden ? '▲ Hide' : '▼ Details';
 }
