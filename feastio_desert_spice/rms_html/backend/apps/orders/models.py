@@ -89,3 +89,76 @@ class Payment(models.Model):
 
     def __str__(self):
         return f"Payment for Order #{self.order.id} — NRs {self.grand_total}"
+
+
+class Reservation(models.Model):
+    class Status(models.TextChoices):
+        PENDING   = 'pending',   'Pending'
+        CONFIRMED = 'confirmed', 'Confirmed'
+        SEATED    = 'seated',    'Seated'
+        CANCELLED = 'cancelled', 'Cancelled'
+        NO_SHOW   = 'no_show',   'No Show'
+
+    customer_name  = models.CharField(max_length=100)
+    customer_phone = models.CharField(max_length=20)
+    customer_email = models.EmailField(blank=True, default='')
+    table          = models.ForeignKey(Table, on_delete=models.SET_NULL, null=True, blank=True, related_name='reservations')
+    party_size     = models.PositiveIntegerField()
+    reserved_date  = models.DateField()
+    reserved_time  = models.TimeField()
+    status         = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    notes          = models.TextField(blank=True, default='')
+    created_at     = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['reserved_date', 'reserved_time']
+
+    def __str__(self):
+        return f"Reservation: {self.customer_name} — {self.reserved_date} {self.reserved_time}"
+
+
+class Takeaway(models.Model):
+    class Status(models.TextChoices):
+        PENDING   = 'pending',   'Pending'
+        PREPARING = 'preparing', 'Preparing'
+        READY     = 'ready',     'Ready'
+        PICKED_UP = 'picked_up', 'Picked Up'
+        CANCELLED = 'cancelled', 'Cancelled'
+
+    class PaymentMethod(models.TextChoices):
+        CASH = 'cash', 'Cash'
+        CARD = 'card', 'Card'
+        QR   = 'qr',   'QR / Digital Wallet'
+
+    customer_name   = models.CharField(max_length=100)
+    customer_phone  = models.CharField(max_length=20)
+    status          = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    total           = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    payment_method  = models.CharField(max_length=20, choices=PaymentMethod.choices, default=PaymentMethod.CASH)
+    is_paid         = models.BooleanField(default=False)
+    notes           = models.TextField(blank=True, default='')
+    created_at      = models.DateTimeField(auto_now_add=True)
+    ready_at        = models.DateTimeField(null=True, blank=True)
+    picked_up_at    = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Takeaway #{self.id} — {self.customer_name}"
+
+    def calculate_total(self):
+        total = sum(item.price * item.quantity for item in self.takeaway_items.all())
+        self.total = total
+        self.save(update_fields=['total'])
+        return total
+
+
+class TakeawayItem(models.Model):
+    takeaway  = models.ForeignKey(Takeaway, on_delete=models.CASCADE, related_name='takeaway_items')
+    menu_item = models.ForeignKey(MenuItem, on_delete=models.PROTECT)
+    quantity  = models.PositiveIntegerField(default=1)
+    price     = models.DecimalField(max_digits=8, decimal_places=2)
+
+    def __str__(self):
+        return f"{self.quantity}x {self.menu_item.name} (Takeaway #{self.takeaway.id})"

@@ -129,3 +129,70 @@ class CreatePaymentSerializer(serializers.Serializer):
             payment.paid_at = timezone.now()
             payment.save()
         return payment
+
+
+# ── Reservation ───────────────────────────────────────────────────────────────
+from .models import Reservation, Takeaway, TakeawayItem
+
+class ReservationSerializer(serializers.ModelSerializer):
+    table_number = serializers.IntegerField(source='table.number', read_only=True)
+
+    class Meta:
+        model = Reservation
+        fields = [
+            'id', 'customer_name', 'customer_phone', 'customer_email',
+            'table', 'table_number', 'party_size',
+            'reserved_date', 'reserved_time', 'status', 'notes', 'created_at',
+        ]
+        read_only_fields = ['id', 'created_at']
+
+
+# ── Takeaway ──────────────────────────────────────────────────────────────────
+class TakeawayItemSerializer(serializers.ModelSerializer):
+    menu_item_name = serializers.CharField(source='menu_item.name', read_only=True)
+
+    class Meta:
+        model = TakeawayItem
+        fields = ['id', 'menu_item', 'menu_item_name', 'quantity', 'price']
+        read_only_fields = ['id', 'price']
+
+
+class TakeawaySerializer(serializers.ModelSerializer):
+    takeaway_items = TakeawayItemSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Takeaway
+        fields = [
+            'id', 'customer_name', 'customer_phone', 'status',
+            'total', 'payment_method', 'is_paid', 'notes',
+            'created_at', 'ready_at', 'picked_up_at', 'takeaway_items',
+        ]
+        read_only_fields = ['id', 'total', 'created_at', 'ready_at', 'picked_up_at']
+
+
+class CreateTakeawayItemSerializer(serializers.Serializer):
+    menu_item = serializers.IntegerField()
+    quantity  = serializers.IntegerField(min_value=1)
+
+
+class CreateTakeawaySerializer(serializers.Serializer):
+    customer_name   = serializers.CharField(max_length=100)
+    customer_phone  = serializers.CharField(max_length=20)
+    payment_method  = serializers.ChoiceField(choices=['cash', 'card', 'qr'], default='cash')
+    notes           = serializers.CharField(allow_blank=True, required=False, default='')
+    items           = CreateTakeawayItemSerializer(many=True)
+
+    def create(self, validated_data):
+        from apps.menu.models import MenuItem
+        items_data = validated_data.pop('items')
+        takeaway = Takeaway.objects.create(**validated_data)
+        for item_data in items_data:
+            menu_item = MenuItem.objects.get(pk=item_data['menu_item'])
+            TakeawayItem.objects.create(
+                takeaway=takeaway,
+                menu_item=menu_item,
+                quantity=item_data['quantity'],
+                price=menu_item.price,
+            )
+        takeaway.calculate_total()
+        return takeaway
