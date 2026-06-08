@@ -1402,9 +1402,9 @@ function renderCashierView(tab) {
       <!-- Tab bar -->
       <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:1.5rem">
         ${[
-          {id:'billing',     label:'💰 Billing'},
-          {id:'takeaway',    label:'🥡 Takeaway'},
-          {id:'reservation', label:'📅 Reservations'},
+          {id:'billing',     label:'Billing'},
+          {id:'takeaway',    label:'Takeaway'},
+          {id:'reservation', label:'Reservations'},
         ].map(t => `
           <button onclick="renderCashierView('${t.id}')"
             style="padding:0.6rem 1.25rem;font-weight:600;font-size:var(--text-sm);border:none;
