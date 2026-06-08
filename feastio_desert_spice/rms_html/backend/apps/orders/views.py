@@ -178,3 +178,91 @@ class PaymentViewSet(viewsets.ModelViewSet):
         payment.status = 'refunded'
         payment.save()
         return Response(PaymentSerializer(payment).data)
+
+
+# ── Reservation ViewSet ───────────────────────────────────────────────────────
+from .models import Reservation, Takeaway, TakeawayItem
+from .serializers import (
+    ReservationSerializer,
+    TakeawaySerializer, CreateTakeawaySerializer,
+)
+
+class ReservationViewSet(viewsets.ModelViewSet):
+    queryset = Reservation.objects.select_related('table').all()
+    serializer_class = ReservationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        date_filter = self.request.query_params.get('date')
+        status_filter = self.request.query_params.get('status')
+        if date_filter:
+            qs = qs.filter(reserved_date=date_filter)
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        return qs
+
+    @action(detail=True, methods=['patch'], url_path='set-status')
+    def set_status(self, request, pk=None):
+        reservation = self.get_object()
+        new_status = request.data.get('status')
+        valid = ['pending', 'confirmed', 'seated', 'cancelled', 'no_show']
+        if new_status not in valid:
+            return Response({'error': 'Invalid status'}, status=status.HTTP_400_BAD_REQUEST)
+        reservation.status = new_status
+        reservation.save()
+        # If seated, mark table as occupied
+        if new_status == 'seated' and reservation.table:
+            reservation.table.status = 'occupied'
+            reservation.table.save()
+        # If cancelled/no_show, free the table
+        if new_status in ['cancelled', 'no_show'] and reservation.table:
+            reservation.table.status = 'available'
+            reservation.table.save()
+        return Response(ReservationSerializer(reservation).data)
+
+
+# ── Takeaway ViewSet ──────────────────────────────────────────────────────────
+class TakeawayViewSet(viewsets.ModelViewSet):
+    queryset = Takeaway.objects.prefetch_related('takeaway_items__menu_item').all()
+    serializer_class = TakeawaySerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        status_filter = self.request.query_params.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        serializer = CreateTakeawaySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        takeaway = serializer.save()
+        return Response(TakeawaySerializer(takeaway).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['patch'], url_path='set-status')
+    def set_status(self, request, pk=None):
+        takeaway = self.get_object()
+        new_status = request.data.get('status')
+        valid = ['pending', 'preparing', 'ready', 'picked_up', 'cancelled']
+        if new_status not in valid:
+            return Response({'error': 'Invalid status'}, status=status.HTTP_400_BAD_REQUEST)
+        from django.utils import timezone as tz
+        takeaway.status = new_status
+        if new_status == 'ready':
+            takeaway.ready_at = tz.now()
+        if new_status == 'picked_up':
+            takeaway.picked_up_at = tz.now()
+            takeaway.is_paid = True
+        takeaway.save()
+        return Response(TakeawaySerializer(takeaway).data)
+
+    @action(detail=True, methods=['patch'], url_path='mark-paid')
+    def mark_paid(self, request, pk=None):
+        takeaway = self.get_object()
+        takeaway.is_paid = True
+        method = request.data.get('payment_method', takeaway.payment_method)
+        takeaway.payment_method = method
+        takeaway.save()
+        return Response(TakeawaySerializer(takeaway).data)

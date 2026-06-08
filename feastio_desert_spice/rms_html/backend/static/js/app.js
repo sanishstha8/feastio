@@ -1350,156 +1350,586 @@ function renderCashierPortal() {
   showPage('cashier');
 }
 
-function renderCashierView() {
-  const unpaid = STATE.orders.filter(o => {
+function renderCashierView(tab) {
+  tab = tab || 'billing';
+  const unpaid = (STATE.orders || []).filter(o => {
     if (o.status !== 'completed') return false;
-    const paid = (STATE.payments || []).find(p => p.order === o.id && p.status === 'paid');
-    return !paid;
+    return !(STATE.payments || []).find(p => p.order === o.id && p.status === 'paid');
   });
-
   const paidToday = (STATE.payments || []).filter(p => {
     if (p.status !== 'paid') return false;
-    const today = new Date().toDateString();
-    return new Date(p.paid_at || p.created_at).toDateString() === today;
+    return new Date(p.paid_at || p.created_at).toDateString() === new Date().toDateString();
   });
+  const todayRevenue = paidToday.reduce((s,p) => s + parseFloat(p.grand_total), 0);
 
-  const todayRevenue = paidToday.reduce((s, p) => s + parseFloat(p.grand_total), 0);
+  const activeTakeaways   = (STATE.takeaways    || []).filter(t => !['picked_up','cancelled'].includes(t.status));
+  const todayReservations = (STATE.reservations || []).filter(r => {
+    const today = new Date().toISOString().split('T')[0];
+    return r.reserved_date === today && !['cancelled','no_show'].includes(r.status);
+  });
 
   document.getElementById('cashier-view').innerHTML = `
     <div style="padding:1.5rem">
 
-      <!-- Stats -->
-      <div class="stats-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:1.5rem">
+      <!-- Stats row -->
+      <div class="stats-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:1.5rem">
         <div class="stat-card">
           <div class="stat-label">Bills Due</div>
           <div class="stat-value" style="color:var(--orange)">${unpaid.length}</div>
           <div class="stat-sub">Awaiting payment</div>
         </div>
         <div class="stat-card">
-          <div class="stat-label">Collected Today</div>
-          <div class="stat-value" style="color:var(--green)">${paidToday.length}</div>
-          <div class="stat-sub">Payments</div>
-        </div>
-        <div class="stat-card">
           <div class="stat-label">Revenue Today</div>
           <div class="stat-value" style="color:var(--green)">NRs ${todayRevenue.toFixed(2)}</div>
-          <div class="stat-sub">Total collected</div>
+          <div class="stat-sub">${paidToday.length} payments</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Active Takeaways</div>
+          <div class="stat-value" style="color:var(--blue)">${activeTakeaways.length}</div>
+          <div class="stat-sub">In progress</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Today's Reservations</div>
+          <div class="stat-value" style="color:var(--purple)">${todayReservations.length}</div>
+          <div class="stat-sub">Upcoming</div>
         </div>
       </div>
 
-      <!-- Bills Due -->
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
-        <h2 style="font-size:1rem;font-weight:600">Bills Due for Payment</h2>
-        <button class="btn btn-outline btn-sm" onclick="loadCashierData()">${icons.refresh} Refresh</button>
+      <!-- Tab bar -->
+      <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:1.5rem">
+        ${[
+          {id:'billing',     label:'💰 Billing'},
+          {id:'takeaway',    label:'🥡 Takeaway'},
+          {id:'reservation', label:'📅 Reservations'},
+        ].map(t => `
+          <button onclick="renderCashierView('${t.id}')"
+            style="padding:0.6rem 1.25rem;font-weight:600;font-size:var(--text-sm);border:none;
+                   background:none;cursor:pointer;border-bottom:2.5px solid ${tab===t.id ? 'var(--orange)' : 'transparent'};
+                   color:${tab===t.id ? 'var(--orange)' : 'var(--text-muted)'};margin-bottom:-2px">
+            ${t.label}
+          </button>
+        `).join('')}
+        <div style="flex:1;display:flex;justify-content:flex-end;align-items:center;padding-bottom:0.4rem">
+          <button class="btn btn-outline btn-sm" onclick="loadCashierData()">${icons.refresh} Refresh</button>
+        </div>
       </div>
 
-      ${unpaid.length === 0
-        ? `<div style="text-align:center;padding:2rem;background:var(--green-bg);border:1px solid var(--green-border);border-radius:var(--radius);color:var(--green);margin-bottom:1.5rem">
-             All bills are settled!
-           </div>`
-        : `<div class="orders-grid" style="margin-bottom:1.5rem">
-            ${unpaid.map(o => `
-              <div class="order-card" style="border:1.5px solid var(--orange)">
-                <div class="order-card-header" style="background:var(--orange-light)">
-                  <span style="font-weight:700">Table ${o.table_number} — Order #${o.id}</span>
-                  <span class="badge badge-orange">Bill Due</span>
-                </div>
-                <div class="order-card-body">
-                  ${(o.items||[]).map(item => `
-                    <div class="order-item-row">
-                      <span>${item.quantity}x ${item.menu_item_name}</span>
-                      <span>NRs ${(parseFloat(item.price)*item.quantity).toFixed(2)}</span>
-                    </div>
-                  `).join('')}
-                  <div class="order-total">
-                    <span style="font-weight:700">Total Bill</span>
-                    <span style="color:var(--orange);font-size:1.1rem;font-weight:800">
-                      NRs ${parseFloat(o.total).toFixed(2)}
-                    </span>
-                  </div>
-                  <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
-                    <button class="btn btn-primary w-full"
-                      onclick="cashierCollectPayment(${o.id}, ${o.total}, ${o.table_number})">
-                      ${icons.check} Collect
-                    </button>
-                    <button class="btn btn-outline"
-                      onclick="cashierShowQR(${o.id}, ${o.total}, ${o.table_number})">
-                      QR
-                    </button>
-                  </div>
-                </div>
-              </div>
-            `).join('')}
-          </div>`
-      }
+      <!-- Tab content -->
+      <div id="cashier-tab-content">
+        ${tab === 'billing'     ? cashierBillingTab(unpaid, paidToday)    : ''}
+        ${tab === 'takeaway'    ? cashierTakeawayTab(activeTakeaways)     : ''}
+        ${tab === 'reservation' ? cashierReservationTab(todayReservations): ''}
+      </div>
 
-      <!-- Today's Payment History -->
-      <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem">Today's Payments</h2>
-      ${paidToday.length === 0
-        ? `<div class="empty-state"><p>No payments collected today</p></div>`
-        : `<div class="card">
-            <div class="card-content">
-              ${paidToday.map(p => `
-                <div class="order-item-row">
-                  <div>
-                    <div style="font-weight:600">Order #${p.order} — Table ${p.table_number}</div>
-                    <div style="font-size:0.75rem;color:var(--text-muted)">
-                      ${new Date(p.paid_at||p.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}
-                      · ${p.method.toUpperCase()}
-                    </div>
-                  </div>
-                  <div style="text-align:right">
-                    <div style="font-weight:700">NRs ${parseFloat(p.grand_total).toFixed(2)}</div>
-                    <span class="badge badge-green">paid</span>
-                  </div>
-                </div>
-              `).join('')}
-            </div>
-          </div>`
-      }
-
-      <!-- Collect Payment Modal -->
+      <!-- Modals (always in DOM) -->
       <div id="cashier-payment-modal" class="modal-overlay hidden">
         <div class="modal">
           <div class="modal-header">
-            <div>
-              <div class="modal-title" id="cpm-title">Collect Payment</div>
-              <div class="modal-desc" id="cpm-desc"></div>
-            </div>
+            <div><div class="modal-title" id="cpm-title">Collect Payment</div><div class="modal-desc" id="cpm-desc"></div></div>
             <button class="modal-close" onclick="closeModal('cashier-payment-modal')">✕</button>
           </div>
           <div class="modal-body" id="cpm-body"></div>
           <div class="modal-footer">
             <button class="btn btn-outline" onclick="closeModal('cashier-payment-modal')">Cancel</button>
-            <button class="btn btn-primary" onclick="cashierSubmitPayment()">
-              ${icons.check} Confirm Payment
-            </button>
+            <button class="btn btn-primary" onclick="cashierSubmitPayment()">${icons.check} Confirm Payment</button>
           </div>
         </div>
       </div>
 
-      <!-- QR Modal -->
       <div id="cashier-qr-modal" class="modal-overlay hidden">
         <div class="modal" style="max-width:380px">
           <div class="modal-header">
-            <div>
-              <div class="modal-title">QR Payment</div>
-              <div class="modal-desc" id="cqr-desc"></div>
-            </div>
+            <div><div class="modal-title">QR Payment</div><div class="modal-desc" id="cqr-desc"></div></div>
             <button class="modal-close" onclick="closeModal('cashier-qr-modal')">✕</button>
           </div>
           <div class="modal-body" id="cqr-body" style="text-align:center"></div>
           <div class="modal-footer">
             <button class="btn btn-outline" onclick="closeModal('cashier-qr-modal')">Close</button>
-            <button class="btn btn-primary" onclick="cashierMarkQRPaid()">
-              ${icons.check} Mark as Paid
-            </button>
+            <button class="btn btn-primary" onclick="cashierMarkQRPaid()">${icons.check} Mark as Paid</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="takeaway-modal" class="modal-overlay hidden">
+        <div class="modal modal-lg">
+          <div class="modal-header">
+            <div><div class="modal-title">New Takeaway Order</div><div class="modal-desc">Fill customer details and select items</div></div>
+            <button class="modal-close" onclick="closeModal('takeaway-modal')">✕</button>
+          </div>
+          <div class="modal-body" id="takeaway-modal-body">${buildTakeawayForm()}</div>
+          <div class="modal-footer">
+            <button class="btn btn-outline" onclick="closeModal('takeaway-modal')">Cancel</button>
+            <button class="btn btn-primary" onclick="submitTakeaway()">🥡 Place Takeaway Order</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="reservation-modal" class="modal-overlay hidden">
+        <div class="modal">
+          <div class="modal-header">
+            <div><div class="modal-title" id="resv-modal-title">New Reservation</div></div>
+            <button class="modal-close" onclick="closeModal('reservation-modal')">✕</button>
+          </div>
+          <div class="modal-body" id="reservation-modal-body">${buildReservationForm()}</div>
+          <div class="modal-footer">
+            <button class="btn btn-outline" onclick="closeModal('reservation-modal')">Cancel</button>
+            <button class="btn btn-primary" onclick="submitReservation()">📅 Save Reservation</button>
           </div>
         </div>
       </div>
 
     </div>
   `;
+}
+
+// ── Billing Tab ───────────────────────────────────────────────────────────────
+function cashierBillingTab(unpaid, paidToday) {
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <h2 style="font-size:1rem;font-weight:600">Bills Due for Payment</h2>
+    </div>
+    ${unpaid.length === 0
+      ? '<div style="text-align:center;padding:2rem;background:var(--green-bg);border:1px solid var(--green-border);border-radius:var(--radius);color:var(--green);margin-bottom:1.5rem">✓ All bills are settled!</div>'
+      : `<div class="orders-grid" style="margin-bottom:1.5rem">
+          ${unpaid.map(o => `
+            <div class="order-card" style="border:1.5px solid var(--orange)">
+              <div class="order-card-header" style="background:var(--orange-light)">
+                <span style="font-weight:700">Table ${o.table_number} — Order #${o.id}</span>
+                <span class="badge badge-orange">Bill Due</span>
+              </div>
+              <div class="order-card-body">
+                ${(o.items||[]).map(item => `
+                  <div class="order-item-row">
+                    <span>${item.quantity}x ${item.menu_item_name}</span>
+                    <span>NRs ${(parseFloat(item.price)*item.quantity).toFixed(2)}</span>
+                  </div>
+                `).join('')}
+                <div class="order-total">
+                  <span style="font-weight:700">Total</span>
+                  <span style="color:var(--orange);font-size:1.1rem;font-weight:800">NRs ${parseFloat(o.total).toFixed(2)}</span>
+                </div>
+                <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
+                  <button class="btn btn-primary w-full" onclick="cashierCollectPayment(${o.id},${o.total},${o.table_number})">${icons.check} Collect</button>
+                  <button class="btn btn-outline" onclick="cashierShowQR(${o.id},${o.total},${o.table_number})">QR</button>
+                </div>
+              </div>
+            </div>
+          `).join('')}
+        </div>`
+    }
+    <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem">Today's Payments</h2>
+    ${paidToday.length === 0
+      ? '<div class="empty-state"><p>No payments collected today</p></div>'
+      : `<div class="card"><div class="card-content">
+          ${paidToday.map(p => `
+            <div class="order-item-row">
+              <div>
+                <div style="font-weight:600">Order #${p.order} — Table ${p.table_number}</div>
+                <div style="font-size:0.75rem;color:var(--text-muted)">
+                  ${new Date(p.paid_at||p.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} · ${p.method.toUpperCase()}
+                </div>
+              </div>
+              <div style="text-align:right">
+                <div style="font-weight:700">NRs ${parseFloat(p.grand_total).toFixed(2)}</div>
+                <span class="badge badge-green">paid</span>
+              </div>
+            </div>
+          `).join('')}
+        </div></div>`
+    }
+  `;
+}
+
+// ── Takeaway Tab ──────────────────────────────────────────────────────────────
+function cashierTakeawayTab(activeTakeaways) {
+  const statusColor = {
+    pending:   {bg:'#fffbeb', border:'#d97706', badge:'badge-yellow'},
+    preparing: {bg:'#eff6ff', border:'#2563eb', badge:'badge-blue'},
+    ready:     {bg:'#f0fdf4', border:'#16a34a', badge:'badge-green'},
+  };
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <h2 style="font-size:1rem;font-weight:600">Active Takeaway Orders</h2>
+      <button class="btn btn-primary btn-sm" onclick="openTakeawayModal()">🥡 New Takeaway</button>
+    </div>
+    ${activeTakeaways.length === 0
+      ? '<div class="empty-state"><p>No active takeaway orders</p></div>'
+      : `<div class="orders-grid">
+          ${activeTakeaways.map(t => {
+            const sc = statusColor[t.status] || {bg:'#f9f9f9', border:'#e5e7eb', badge:'badge-gray'};
+            return `
+              <div class="order-card" style="border:1.5px solid ${sc.border};background:${sc.bg}">
+                <div class="order-card-header">
+                  <div>
+                    <div style="font-weight:700">#${t.id} — ${t.customer_name}</div>
+                    <div style="font-size:0.75rem;color:var(--text-muted)">📞 ${t.customer_phone}</div>
+                  </div>
+                  <span class="badge ${sc.badge}">${t.status}</span>
+                </div>
+                <div class="order-card-body">
+                  ${(t.takeaway_items||[]).map(item => `
+                    <div class="order-item-row">
+                      <span>${item.quantity}x ${item.menu_item_name}</span>
+                      <span>NRs ${(parseFloat(item.price)*item.quantity).toFixed(2)}</span>
+                    </div>
+                  `).join('')}
+                  <div class="order-total">
+                    <span>Total</span>
+                    <span style="font-weight:800">NRs ${parseFloat(t.total).toFixed(2)}</span>
+                  </div>
+                  <div style="font-size:0.75rem;color:var(--text-muted);margin:0.35rem 0">
+                    ${t.is_paid ? '✅ Paid · ' : '⚠️ Unpaid · '} ${t.payment_method.toUpperCase()}
+                    · ${new Date(t.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:0.4rem;margin-top:0.5rem">
+                    ${t.status === 'pending' ? `
+                      <button class="btn btn-primary w-full" onclick="takeawaySetStatus(${t.id},'preparing')">👨‍🍳 Start Preparing</button>
+                    ` : t.status === 'preparing' ? `
+                      <button class="btn btn-primary w-full" onclick="takeawaySetStatus(${t.id},'ready')">✅ Mark Ready</button>
+                    ` : t.status === 'ready' ? `
+                      <button class="btn btn-primary w-full" onclick="takeawayPickedUp(${t.id},${t.is_paid})">📦 Mark Picked Up</button>
+                    ` : ''}
+                    ${!t.is_paid ? `
+                      <button class="btn btn-outline w-full btn-sm" onclick="takeawayMarkPaid(${t.id})">💵 Mark Paid</button>
+                    ` : ''}
+                    ${t.status !== 'cancelled' ? `
+                      <button class="btn btn-outline w-full btn-sm" style="color:#dc2626;border-color:#dc2626"
+                        onclick="takeawaySetStatus(${t.id},'cancelled')">✕ Cancel</button>
+                    ` : ''}
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>`
+    }
+  `;
+}
+
+// ── Reservation Tab ───────────────────────────────────────────────────────────
+function cashierReservationTab(todayReservations) {
+  const statusColor = {
+    pending:   'badge-yellow',
+    confirmed: 'badge-blue',
+    seated:    'badge-green',
+    cancelled: 'badge-red',
+    no_show:   'badge-gray',
+  };
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <h2 style="font-size:1rem;font-weight:600">Today's Reservations</h2>
+      <button class="btn btn-primary btn-sm" onclick="openReservationModal()">📅 New Reservation</button>
+    </div>
+    ${todayReservations.length === 0
+      ? '<div class="empty-state"><p>No reservations for today</p></div>'
+      : `<div style="display:flex;flex-direction:column;gap:0.75rem">
+          ${todayReservations.map(r => `
+            <div class="card" style="padding:0">
+              <div style="padding:0.85rem 1rem;display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:0.5rem">
+                <div>
+                  <div style="font-weight:700;font-size:1rem">${r.customer_name}</div>
+                  <div style="font-size:0.8rem;color:var(--text-muted)">
+                    📞 ${r.customer_phone}
+                    ${r.customer_email ? ` · ✉️ ${r.customer_email}` : ''}
+                  </div>
+                  <div style="font-size:0.8rem;margin-top:0.25rem">
+                    🕐 ${r.reserved_time?.slice(0,5)} · 👥 ${r.party_size} guests
+                    ${r.table_number ? ` · Table ${r.table_number}` : ''}
+                  </div>
+                  ${r.notes ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.2rem;font-style:italic">"${r.notes}"</div>` : ''}
+                </div>
+                <span class="badge ${statusColor[r.status] || 'badge-gray'}">${r.status}</span>
+              </div>
+              <div style="padding:0.5rem 1rem 0.85rem;display:flex;gap:0.4rem;flex-wrap:wrap">
+                ${r.status === 'pending' ? `
+                  <button class="btn btn-primary btn-sm" onclick="resvSetStatus(${r.id},'confirmed')">✓ Confirm</button>
+                ` : ''}
+                ${r.status === 'confirmed' ? `
+                  <button class="btn btn-primary btn-sm" onclick="resvSetStatus(${r.id},'seated')">🍽️ Seat Guest</button>
+                ` : ''}
+                ${!['cancelled','no_show','seated'].includes(r.status) ? `
+                  <button class="btn btn-outline btn-sm" onclick="resvSetStatus(${r.id},'no_show')">No Show</button>
+                  <button class="btn btn-outline btn-sm" style="color:#dc2626;border-color:#dc2626" onclick="resvSetStatus(${r.id},'cancelled')">Cancel</button>
+                ` : ''}
+                <button class="btn btn-outline btn-sm" onclick="openEditReservationModal(${r.id})">Edit</button>
+              </div>
+            </div>
+          `).join('')}
+        </div>`
+    }
+  `;
+}
+
+// ── Takeaway Form ─────────────────────────────────────────────────────────────
+function buildTakeawayForm() {
+  const menu = (STATE.menuItems || []).filter(m => m.available);
+  return `
+    <div class="form-grid-2">
+      <div class="form-group">
+        <label class="form-label">Customer Name *</label>
+        <input class="form-input" id="tk-name" placeholder="Full name">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Phone *</label>
+        <input class="form-input" id="tk-phone" placeholder="98XXXXXXXX">
+      </div>
+    </div>
+    <div class="form-grid-2">
+      <div class="form-group">
+        <label class="form-label">Payment Method</label>
+        <select class="form-select" id="tk-method">
+          <option value="cash">Cash</option>
+          <option value="card">Card</option>
+          <option value="qr">QR / Digital Wallet</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notes (optional)</label>
+        <input class="form-input" id="tk-notes" placeholder="Special instructions">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Select Items</label>
+      <input class="form-input" id="tk-search" placeholder="🔍 Search menu..." oninput="tkFilterMenu(this.value)" style="margin-bottom:0.5rem">
+      <div id="tk-menu-list" style="border:1px solid var(--border);border-radius:var(--radius);max-height:220px;overflow-y:auto;padding:0.4rem;display:flex;flex-direction:column;gap:0.3rem">
+        ${menu.map(item => `
+          <div class="tk-menu-row" data-name="${item.name.toLowerCase()}"
+            style="display:flex;justify-content:space-between;align-items:center;padding:0.45rem 0.6rem;background:var(--bg);border-radius:var(--radius)">
+            <div>
+              <div style="font-weight:500;font-size:var(--text-sm)">${item.name}</div>
+              <div style="font-size:0.75rem;color:var(--text-muted)">NRs ${parseFloat(item.price).toFixed(2)}</div>
+            </div>
+            <div id="tk-ctrl-${item.id}">
+              <button class="btn btn-primary btn-sm" onclick="tkAddItem(${item.id},${item.price},'${item.name.replace(/'/g,"\'")}')">Add</button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+    <div id="tk-summary" class="hidden" style="background:var(--bg);border-radius:var(--radius);padding:0.75rem;margin-top:0.25rem">
+      <div style="font-weight:600;font-size:var(--text-sm);margin-bottom:0.35rem">Order Summary:</div>
+      <div id="tk-summary-items"></div>
+      <div class="order-total" id="tk-summary-total"><span>Total</span><span>NRs 0.00</span></div>
+    </div>
+  `;
+}
+
+let tkCart = {};
+
+function openTakeawayModal() {
+  tkCart = {};
+  const body = document.getElementById('takeaway-modal-body');
+  if (body) body.innerHTML = buildTakeawayForm();
+  openModal('takeaway-modal');
+}
+
+function tkFilterMenu(q) {
+  q = q.toLowerCase().trim();
+  document.querySelectorAll('#tk-menu-list .tk-menu-row').forEach(row => {
+    row.style.display = (!q || row.getAttribute('data-name').includes(q)) ? '' : 'none';
+  });
+}
+
+function tkAddItem(id, price, name) {
+  if (tkCart[id]) tkCart[id].qty++;
+  else tkCart[id] = { qty:1, price:parseFloat(price), name };
+  const ctrl = document.getElementById('tk-ctrl-'+id);
+  if (ctrl) {
+    ctrl.innerHTML = `
+      <div style="display:flex;align-items:center;gap:0.3rem">
+        <button class="btn btn-outline btn-sm" onclick="tkRemoveItem(${id})">-</button>
+        <span style="width:1.5rem;text-align:center;font-weight:600">${tkCart[id].qty}</span>
+        <button class="btn btn-outline btn-sm" onclick="tkAddItem(${id},${price},'${name.replace(/'/g,"\'")}')">+</button>
+      </div>`;
+  }
+  tkUpdateSummary();
+}
+
+function tkRemoveItem(id) {
+  if (!tkCart[id]) return;
+  tkCart[id].qty--;
+  if (tkCart[id].qty <= 0) delete tkCart[id];
+  const item = (STATE.menuItems||[]).find(m => m.id === id);
+  const ctrl = document.getElementById('tk-ctrl-'+id);
+  if (ctrl) {
+    if (!tkCart[id]) {
+      ctrl.innerHTML = `<button class="btn btn-primary btn-sm" onclick="tkAddItem(${id},${item?.price},'${item?.name?.replace(/'/g,"\'")}')">Add</button>`;
+    } else {
+      ctrl.innerHTML = `
+        <div style="display:flex;align-items:center;gap:0.3rem">
+          <button class="btn btn-outline btn-sm" onclick="tkRemoveItem(${id})">-</button>
+          <span style="width:1.5rem;text-align:center;font-weight:600">${tkCart[id].qty}</span>
+          <button class="btn btn-outline btn-sm" onclick="tkAddItem(${id},${item?.price},'${item?.name?.replace(/'/g,"\'")}')">+</button>
+        </div>`;
+    }
+  }
+  tkUpdateSummary();
+}
+
+function tkUpdateSummary() {
+  const summary  = document.getElementById('tk-summary');
+  const itemsDiv = document.getElementById('tk-summary-items');
+  const totalDiv = document.getElementById('tk-summary-total');
+  const entries  = Object.entries(tkCart);
+  if (!entries.length) { summary?.classList.add('hidden'); return; }
+  summary?.classList.remove('hidden');
+  let tot = 0;
+  if (itemsDiv) itemsDiv.innerHTML = entries.map(([id,{qty,price,name}]) => {
+    tot += qty * price;
+    return `<div style="display:flex;justify-content:space-between;font-size:var(--text-sm);margin-bottom:0.2rem"><span>${qty}x ${name}</span><span>NRs ${(qty*price).toFixed(2)}</span></div>`;
+  }).join('');
+  if (totalDiv) totalDiv.innerHTML = `<span>Total</span><span>NRs ${tot.toFixed(2)}</span>`;
+}
+
+async function submitTakeaway() {
+  const name   = document.getElementById('tk-name')?.value.trim();
+  const phone  = document.getElementById('tk-phone')?.value.trim();
+  const method = document.getElementById('tk-method')?.value;
+  const notes  = document.getElementById('tk-notes')?.value || '';
+  if (!name)  { toast('Customer name is required', 'error'); return; }
+  if (!phone) { toast('Phone number is required',  'error'); return; }
+  if (!Object.keys(tkCart).length) { toast('Please add at least one item', 'error'); return; }
+  try {
+    await api.post('/orders/takeaways/', {
+      customer_name: name, customer_phone: phone,
+      payment_method: method, notes,
+      items: Object.entries(tkCart).map(([id,{qty}]) => ({ menu_item: parseInt(id), quantity: qty })),
+    });
+    closeModal('takeaway-modal');
+    toast('Takeaway order placed!');
+    loadCashierData();
+  } catch(e) {
+    try { const err = JSON.parse(e.message); toast(Object.values(err).flat()[0] || 'Failed', 'error'); }
+    catch { toast('Failed to place takeaway order', 'error'); }
+  }
+}
+
+async function takeawaySetStatus(id, newStatus) {
+  try {
+    await api.patch('/orders/takeaways/'+id+'/set-status/', { status: newStatus });
+    toast('Takeaway updated!');
+    loadCashierData();
+  } catch { toast('Failed to update takeaway', 'error'); }
+}
+
+async function takeawayPickedUp(id, isPaid) {
+  if (!isPaid) {
+    if (!confirm('This order is not yet paid. Mark as picked up anyway?')) return;
+  }
+  await takeawaySetStatus(id, 'picked_up');
+}
+
+async function takeawayMarkPaid(id) {
+  const method = prompt('Payment method? (cash / card / qr)', 'cash');
+  if (!method) return;
+  try {
+    await api.patch('/orders/takeaways/'+id+'/mark-paid/', { payment_method: method });
+    toast('Marked as paid!');
+    loadCashierData();
+  } catch { toast('Failed to mark as paid', 'error'); }
+}
+
+// ── Reservation Form ──────────────────────────────────────────────────────────
+function buildReservationForm(r) {
+  const today = new Date().toISOString().split('T')[0];
+  return `
+    <input type="hidden" id="resv-id" value="${r?.id || ''}">
+    <div class="form-grid-2">
+      <div class="form-group">
+        <label class="form-label">Customer Name *</label>
+        <input class="form-input" id="resv-name" value="${r?.customer_name || ''}" placeholder="Full name">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Phone *</label>
+        <input class="form-input" id="resv-phone" value="${r?.customer_phone || ''}" placeholder="98XXXXXXXX">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Email (optional)</label>
+      <input class="form-input" id="resv-email" type="email" value="${r?.customer_email || ''}" placeholder="customer@email.com">
+    </div>
+    <div class="form-grid-2">
+      <div class="form-group">
+        <label class="form-label">Date *</label>
+        <input class="form-input" id="resv-date" type="date" value="${r?.reserved_date || today}" min="${today}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Time *</label>
+        <input class="form-input" id="resv-time" type="time" value="${r?.reserved_time?.slice(0,5) || ''}">
+      </div>
+    </div>
+    <div class="form-grid-2">
+      <div class="form-group">
+        <label class="form-label">Party Size *</label>
+        <input class="form-input" id="resv-party" type="number" min="1" value="${r?.party_size || 2}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Table (optional)</label>
+        <select class="form-select" id="resv-table">
+          <option value="">Auto-assign</option>
+          ${(STATE.tables||[]).map(t => `<option value="${t.id}" ${r?.table === t.id ? 'selected':''}>Table ${t.number} (${t.capacity} seats)</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes (optional)</label>
+      <textarea class="form-textarea" id="resv-notes" placeholder="Dietary requirements, special occasion...">${r?.notes || ''}</textarea>
+    </div>
+  `;
+}
+
+function openReservationModal() {
+  document.getElementById('resv-modal-title').textContent = 'New Reservation';
+  document.getElementById('reservation-modal-body').innerHTML = buildReservationForm();
+  openModal('reservation-modal');
+}
+
+function openEditReservationModal(resvId) {
+  const r = (STATE.reservations||[]).find(r => r.id === resvId);
+  if (!r) return;
+  document.getElementById('resv-modal-title').textContent = 'Edit Reservation';
+  document.getElementById('reservation-modal-body').innerHTML = buildReservationForm(r);
+  openModal('reservation-modal');
+}
+
+async function submitReservation() {
+  const id     = document.getElementById('resv-id')?.value;
+  const name   = document.getElementById('resv-name')?.value.trim();
+  const phone  = document.getElementById('resv-phone')?.value.trim();
+  const email  = document.getElementById('resv-email')?.value.trim();
+  const date   = document.getElementById('resv-date')?.value;
+  const time   = document.getElementById('resv-time')?.value;
+  const party  = document.getElementById('resv-party')?.value;
+  const table  = document.getElementById('resv-table')?.value;
+  const notes  = document.getElementById('resv-notes')?.value || '';
+  if (!name)  { toast('Customer name is required', 'error'); return; }
+  if (!phone) { toast('Phone number is required',  'error'); return; }
+  if (!date)  { toast('Date is required',          'error'); return; }
+  if (!time)  { toast('Time is required',          'error'); return; }
+  const body = {
+    customer_name: name, customer_phone: phone,
+    customer_email: email, reserved_date: date,
+    reserved_time: time, party_size: parseInt(party),
+    table: table ? parseInt(table) : null, notes,
+  };
+  try {
+    if (id) await api.patch('/orders/reservations/'+id+'/', body);
+    else    await api.post('/orders/reservations/', body);
+    closeModal('reservation-modal');
+    toast(id ? 'Reservation updated!' : 'Reservation saved!');
+    loadCashierData();
+  } catch(e) {
+    try { const err = JSON.parse(e.message); toast(Object.values(err).flat()[0] || 'Failed', 'error'); }
+    catch { toast('Failed to save reservation', 'error'); }
+  }
+}
+
+async function resvSetStatus(id, newStatus) {
+  try {
+    await api.patch('/orders/reservations/'+id+'/set-status/', { status: newStatus });
+    toast('Reservation updated!');
+    loadCashierData();
+  } catch { toast('Failed to update reservation', 'error'); }
 }
 
 // ── Cashier Payment Functions ─────────────────────────────────────────────────
@@ -1521,8 +1951,8 @@ function cashierCollectPayment(orderId, amount, tableNum) {
     <div class="form-group">
       <label class="form-label">Payment Method</label>
       <div style="display:flex;gap:0.5rem">
-        <button id="cpm-cash" class="btn btn-primary w-full" onclick="cSelectMethod('cash')">Cash</button>
-        <button id="cpm-card" class="btn btn-outline w-full" onclick="cSelectMethod('card')">Card</button>
+        <button id="cpm-cash" class="btn btn-primary w-full" onclick="cSelectMethod('cash')">💵 Cash</button>
+        <button id="cpm-card" class="btn btn-outline w-full" onclick="cSelectMethod('card')">💳 Card</button>
         <button id="cpm-qr"   class="btn btn-outline w-full" onclick="cSelectMethod('qr')">QR</button>
       </div>
       <input type="hidden" id="cpm-method" value="cash">
@@ -1530,25 +1960,20 @@ function cashierCollectPayment(orderId, amount, tableNum) {
     <div class="form-grid-2">
       <div class="form-group">
         <label class="form-label">Tip (NRs)</label>
-        <input class="form-input" type="number" id="cpm-tip"
-          value="0" min="0" oninput="cUpdateTotal()">
+        <input class="form-input" type="number" id="cpm-tip" value="0" min="0" oninput="cUpdateTotal()">
       </div>
       <div class="form-group">
         <label class="form-label">Discount (NRs)</label>
-        <input class="form-input" type="number" id="cpm-discount"
-          value="0" min="0" oninput="cUpdateTotal()">
+        <input class="form-input" type="number" id="cpm-discount" value="0" min="0" oninput="cUpdateTotal()">
       </div>
     </div>
     <div class="form-group">
       <label class="form-label">Note (optional)</label>
       <input class="form-input" id="cpm-note" placeholder="e.g. paid by card">
     </div>
-    <div style="display:flex;justify-content:space-between;align-items:center;
-      padding:0.75rem;background:var(--bg);border-radius:var(--radius);border:1px solid var(--border)">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:0.75rem;background:var(--bg);border-radius:var(--radius);border:1px solid var(--border)">
       <span style="font-weight:600">Grand Total</span>
-      <span style="font-size:1.3rem;font-weight:800;color:var(--green)" id="cpm-grand">
-        NRs ${_cPayAmount.toFixed(2)}
-      </span>
+      <span style="font-size:1.3rem;font-weight:800;color:var(--green)" id="cpm-grand">NRs ${_cPayAmount.toFixed(2)}</span>
     </div>
   `;
   openModal('cashier-payment-modal');
@@ -1557,7 +1982,7 @@ function cashierCollectPayment(orderId, amount, tableNum) {
 function cSelectMethod(m) {
   document.getElementById('cpm-method').value = m;
   ['cash','card','qr'].forEach(x => {
-    const btn = document.getElementById(`cpm-${x}`);
+    const btn = document.getElementById('cpm-'+x);
     if (btn) btn.className = x === m ? 'btn btn-primary w-full' : 'btn btn-outline w-full';
   });
 }
@@ -1567,7 +1992,7 @@ function cUpdateTotal() {
   const discount = parseFloat(document.getElementById('cpm-discount')?.value) || 0;
   const grand    = Math.max(0, _cPayAmount + tip - discount);
   const el = document.getElementById('cpm-grand');
-  if (el) el.textContent = `NRs ${grand.toFixed(2)}`;
+  if (el) el.textContent = 'NRs ' + grand.toFixed(2);
 }
 
 async function cashierSubmitPayment() {
@@ -1576,41 +2001,31 @@ async function cashierSubmitPayment() {
   const discount = parseFloat(document.getElementById('cpm-discount').value) || 0;
   const note     = document.getElementById('cpm-note').value;
   try {
-    await api.post('/orders/payments/', {
-      order_id: _cPayOrderId, method, tip, discount, note,
-    });
+    await api.post('/orders/payments/', { order_id: _cPayOrderId, method, tip, discount, note });
     closeModal('cashier-payment-modal');
     toast('Payment recorded successfully!');
     loadCashierData();
   } catch(e) {
-    try {
-      const err = JSON.parse(e.message);
-      toast(Object.values(err).flat()[0] || 'Payment failed', 'error');
-    } catch { toast('Failed to record payment', 'error'); }
+    try { const err = JSON.parse(e.message); toast(Object.values(err).flat()[0] || 'Payment failed', 'error'); }
+    catch { toast('Failed to record payment', 'error'); }
   }
 }
 
 function cashierShowQR(orderId, amount, tableNum) {
   _cQROrderId = orderId;
   _cQRAmount  = parseFloat(amount);
-  document.getElementById('cqr-desc').textContent = `Table ${tableNum} — Order #${orderId}`;
+  document.getElementById('cqr-desc').textContent = 'Table ' + tableNum + ' — Order #' + orderId;
   document.getElementById('cqr-body').innerHTML = `
     <div style="margin-bottom:1rem">
       <div style="font-size:0.85rem;color:var(--text-muted)">Amount Due</div>
-      <div style="font-size:2rem;font-weight:800;color:var(--orange)">
-        NRs ${_cQRAmount.toFixed(2)}
-      </div>
+      <div style="font-size:2rem;font-weight:800;color:var(--orange)">NRs ${_cQRAmount.toFixed(2)}</div>
     </div>
     <div id="cqr-canvas" style="display:flex;justify-content:center;margin:1rem 0"></div>
-    <p style="font-size:0.8rem;color:var(--text-muted)">
-      Scan to pay via eSewa / Khalti / IME Pay
-    </p>
+    <p style="font-size:0.8rem;color:var(--text-muted)">Scan to pay via eSewa / Khalti / IME Pay</p>
   `;
-  const qrData = encodeURIComponent(
-    `FEASTIO|Order#${orderId}|Table${tableNum}|NRs${_cQRAmount.toFixed(2)}`
-  );
+  const qrData = encodeURIComponent('FEASTIO|Order#'+orderId+'|Table'+tableNum+'|NRs'+_cQRAmount.toFixed(2));
   const img = document.createElement('img');
-  img.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${qrData}&bgcolor=ffffff&color=1a1a1a&margin=10`;
+  img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data='+qrData+'&bgcolor=ffffff&color=1a1a1a&margin=10';
   img.style.cssText = 'width:200px;height:200px;border-radius:8px;border:2px solid var(--border)';
   img.alt = 'QR Code';
   document.getElementById('cqr-canvas').appendChild(img);
@@ -1619,10 +2034,7 @@ function cashierShowQR(orderId, amount, tableNum) {
 
 async function cashierMarkQRPaid() {
   try {
-    await api.post('/orders/payments/', {
-      order_id: _cQROrderId, method: 'qr',
-      tip: 0, discount: 0, note: 'Paid via QR',
-    });
+    await api.post('/orders/payments/', { order_id: _cQROrderId, method: 'qr', tip:0, discount:0, note:'Paid via QR' });
     closeModal('cashier-qr-modal');
     toast('QR payment confirmed!');
     loadCashierData();
