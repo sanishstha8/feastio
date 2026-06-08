@@ -147,12 +147,16 @@ async function loadStaffData() {
 
 async function loadCashierData() {
   try {
-    const [orders, payments] = await Promise.all([
+    const [orders, payments, takeaways, reservations] = await Promise.all([
       api.get('/orders/orders/'),
       api.get('/orders/payments/'),
+      api.get('/orders/takeaways/'),
+      api.get('/orders/reservations/'),
     ]);
-    STATE.orders   = orders.results   ?? orders;
-    STATE.payments = payments.results ?? payments;
+    STATE.orders        = orders.results        ?? orders;
+    STATE.payments      = payments.results      ?? payments;
+    STATE.takeaways     = takeaways.results     ?? takeaways;
+    STATE.reservations  = reservations.results  ?? reservations;
     renderCashierView();
   } catch { toast('Failed to load data', 'error'); }
 }
