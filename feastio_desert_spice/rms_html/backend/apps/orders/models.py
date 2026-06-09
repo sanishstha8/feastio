@@ -25,9 +25,14 @@ class Order(models.Model):
         ACTIVE = 'active', 'Active'
         COMPLETED = 'completed', 'Completed'
         CANCELLED = 'cancelled', 'Cancelled'
+    
+    class OrderType(models.TextChoices):
+        DINE_IN  = 'dine_in',  'Dine In'
+        TAKEAWAY = 'takeaway', 'Takeaway'
 
     table = models.ForeignKey(Table, on_delete=models.PROTECT, related_name='orders')
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
+    order_type = models.CharField(max_length=20, choices=OrderType.choices, default=OrderType.DINE_IN)
     total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
