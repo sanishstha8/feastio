@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual Environment
+venv/
+env/
+*.env
+
+# Django
+*.log
+db.sqlite3
+media/
+staticfiles/
+
+# Environment Variables (IMPORTANT - hides passwords/secret keys)
+.env
+.env.local
+
+# VS Code
+.vscode/
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# PostgreSQL
+*.sql
+*.dump
