@@ -2,6 +2,7 @@ from rest_framework import viewsets, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from .models import Category, MenuItem
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from .serializers import CategorySerializer, MenuItemSerializer
 
 
@@ -23,6 +24,7 @@ class MenuItemViewSet(viewsets.ModelViewSet):
     queryset = MenuItem.objects.select_related('category').all()
     serializer_class = MenuItemSerializer
     permission_classes = [IsManagerOrReadOnly]
+    parser_classes = [MultiPartParser, FormParser, JSONParser] 
 
     def get_queryset(self):
         qs = super().get_queryset()

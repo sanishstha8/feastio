@@ -801,6 +801,7 @@ function renderMenu() {
             <div class="menu-grid">
               ${items.map(item => `
                 <div class="menu-item-card" data-name="${item.name.toLowerCase()}">
+                  ${item.image ? `<img src="${item.image}" style="width:100%;height:140px;object-fit:cover;border-radius:var(--radius) var(--radius) 0 0" onerror="this.style.display='none'">` : ''}
                   <div class="menu-item-top">
                     <div class="menu-item-name">${item.name}</div>
                     <span class="badge ${item.available ? 'badge-green' : 'badge-gray'} clickable-badge" onclick="toggleMenuItem(${item.id})"> ${item.available ? 'Available' : 'Off'} </span>
@@ -821,7 +822,6 @@ function renderMenu() {
       }).join('')
     }
     </div>
-    ${menuFormModal()}
   `);
 }
 
@@ -867,6 +867,11 @@ function menuFormModal(item = null) {
             <label class="form-label">Description</label>
             <textarea class="form-textarea" id="menu-desc" placeholder="Item description">${item?.description || ''}</textarea>
           </div>
+          <div class="form-group">
+            <label class="form-label">Food Photo</label>
+            ${item?.image ? `<img src="${item.image}" style="width:100%;height:140px;object-fit:cover;border-radius:var(--radius);margin-bottom:0.5rem" onerror="this.style.display='none'">` : ''}
+            <input type="file" id="menu-image" accept="image/*" class="form-input" style="padding:0.25rem">
+          </div>
           <div style="display:flex;align-items:center;gap:0.75rem">
             <input type="checkbox" id="menu-available" ${(!item || item.available) ? 'checked' : ''}>
             <label for="menu-available" class="form-label" style="margin:0">Available for ordering</label>
@@ -882,11 +887,9 @@ function menuFormModal(item = null) {
 }
 
 function openMenuModal(itemId = null) {
-  if (itemId) {
-    const item = STATE.menuItems.find(m => m.id === itemId);
-    document.getElementById('menu-modal')?.remove();
-    document.getElementById('page-inner').insertAdjacentHTML('beforeend', menuFormModal(item));
-  }
+  document.getElementById('menu-modal')?.remove();
+  const item = itemId ? STATE.menuItems.find(m => m.id === itemId) : null;
+  document.getElementById('page-inner').insertAdjacentHTML('beforeend', menuFormModal(item));
   openModal('menu-modal');
 }
 
@@ -907,15 +910,32 @@ async function saveMenuItem() {
     return;
   }
   try {
-    const body = { name, price: parseFloat(price), category: parseInt(cat), description: desc, available: avail };
-    if (id) await api.patch(`/menu/items/${id}/`, body);
-    else    await api.post('/menu/items/', body);
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('price', parseFloat(price));
+    formData.append('category', parseInt(cat));
+    formData.append('description', desc);
+    formData.append('available', avail);
+    const imgFile = document.getElementById('menu-image').files[0];
+    if (imgFile) formData.append('image', imgFile);
+
+    const headers = {};
+    const token = localStorage.getItem('access_token');
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`/api/menu/items/${id ? id + '/' : ''}`, {
+        method: id ? 'PATCH' : 'POST',
+        headers,
+        body: formData,
+    });
+    if (!res.ok) throw new Error();
     const data = await api.get('/menu/items/');
     STATE.menuItems = data.results ?? data;
     closeModal('menu-modal');
     renderMenu();
     toast(id ? 'Item updated' : 'Item added');
-  } catch { toast('Failed to save item', 'error'); }
+  } 
+  catch { toast('Failed to save item', 'error'); }
 }
 
 async function toggleMenuItem(id) {
