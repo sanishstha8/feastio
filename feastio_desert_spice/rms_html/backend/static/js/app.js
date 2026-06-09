@@ -2782,7 +2782,7 @@ function renderKitchenView() {
                 ${item.status !== 'served' ? `
                   <button class="btn btn-outline btn-sm w-full" style="margin-top:0.5rem"
                     onclick="kitchenUpdateItem(${o.id}, ${item.id}, '${item.status}')">
-                    ${item.status==='pending'?'Start Preparing':item.status==='preparing'?'Mark Ready':'Mark Served'}
+                    ${item.status==='pending'?'Start Preparing':item.status==='preparing'?'Mark Ready':''}
                   </button>
                 ` : `<div style="font-size:0.75rem;text-align:center;color:var(--text-muted);margin-top:0.5rem">✓ Served</div>`}
               </div>
