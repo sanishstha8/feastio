@@ -1499,7 +1499,7 @@ function renderCashierView(tab) {
           <div class="modal-body" id="takeaway-modal-body">${buildTakeawayForm()}</div>
           <div class="modal-footer">
             <button class="btn btn-outline" onclick="closeModal('takeaway-modal')">Cancel</button>
-            <button class="btn btn-primary" onclick="submitTakeaway()">🥡 Place Takeaway Order</button>
+            <button class="btn btn-primary" onclick="submitTakeaway()"> Place Takeaway Order</button>
           </div>
         </div>
       </div>
@@ -1513,7 +1513,7 @@ function renderCashierView(tab) {
           <div class="modal-body" id="reservation-modal-body">${buildReservationForm()}</div>
           <div class="modal-footer">
             <button class="btn btn-outline" onclick="closeModal('reservation-modal')">Cancel</button>
-            <button class="btn btn-primary" onclick="submitReservation()">📅 Save Reservation</button>
+            <button class="btn btn-primary" onclick="submitReservation()"> Save Reservation</button>
           </div>
         </div>
       </div>
@@ -1590,7 +1590,7 @@ function cashierTakeawayTab(activeTakeaways) {
   return `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
       <h2 style="font-size:1rem;font-weight:600">Active Takeaway Orders</h2>
-      <button class="btn btn-primary btn-sm" onclick="openTakeawayModal()">🥡 New Takeaway</button>
+      <button class="btn btn-primary btn-sm" onclick="openTakeawayModal()">New Takeaway</button>
     </div>
     ${activeTakeaways.length === 0
       ? '<div class="empty-state"><p>No active takeaway orders</p></div>'
@@ -1618,22 +1618,22 @@ function cashierTakeawayTab(activeTakeaways) {
                     <span style="font-weight:800">NRs ${parseFloat(t.total).toFixed(2)}</span>
                   </div>
                   <div style="font-size:0.75rem;color:var(--text-muted);margin:0.35rem 0">
-                    ${t.is_paid ? '✅ Paid · ' : '⚠️ Unpaid · '} ${t.payment_method.toUpperCase()}
+                    ${t.is_paid ? ' Paid · ' : ' Unpaid · '} ${t.payment_method.toUpperCase()}
                     · ${new Date(t.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}
                   </div>
 
                   <!-- Kitchen status info (read-only for cashier) -->
                   ${t.status === 'pending' ? `
                     <div style="padding:0.5rem;background:#fffbeb;border:1px solid #d97706;border-radius:var(--radius);font-size:0.8rem;text-align:center;margin-bottom:0.5rem">
-                      ⏳ Waiting for kitchen to start preparing
+                       Waiting for kitchen to start preparing
                     </div>
                   ` : t.status === 'preparing' ? `
                     <div style="padding:0.5rem;background:#eff6ff;border:1px solid #2563eb;border-radius:var(--radius);font-size:0.8rem;text-align:center;margin-bottom:0.5rem">
-                      👨‍🍳 Kitchen is preparing this order...
+                       Kitchen is preparing this order...
                     </div>
                   ` : t.status === 'ready' ? `
                     <div style="padding:0.5rem;background:#f0fdf4;border:1px solid #16a34a;border-radius:var(--radius);font-size:0.8rem;text-align:center;margin-bottom:0.5rem">
-                      ✅ Ready for pickup!
+                       Ready for pickup!
                     </div>
                   ` : ''}
 
@@ -1641,12 +1641,12 @@ function cashierTakeawayTab(activeTakeaways) {
                   <div style="display:flex;flex-direction:column;gap:0.4rem;margin-top:0.5rem">
                     ${t.status === 'ready' ? `
                       <button class="btn btn-primary w-full" onclick="takeawayPickedUp(${t.id},${t.is_paid})">
-                        📦 Mark Picked Up
+                         Mark Picked Up
                       </button>
                     ` : ''}
                     ${!t.is_paid ? `
                       <button class="btn btn-outline w-full btn-sm" onclick="takeawayMarkPaid(${t.id})">
-                        💵 Mark Paid
+                         Mark Paid
                       </button>
                     ` : ''}
                     ${t.status !== 'cancelled' ? `
@@ -1675,7 +1675,7 @@ function cashierReservationTab(todayReservations) {
   return `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
       <h2 style="font-size:1rem;font-weight:600">Today's Reservations</h2>
-      <button class="btn btn-primary btn-sm" onclick="openReservationModal()">📅 New Reservation</button>
+      <button class="btn btn-primary btn-sm" onclick="openReservationModal()">New Reservation</button>
     </div>
     ${todayReservations.length === 0
       ? '<div class="empty-state"><p>No reservations for today</p></div>'
@@ -1686,11 +1686,11 @@ function cashierReservationTab(todayReservations) {
                 <div>
                   <div style="font-weight:700;font-size:1rem">${r.customer_name}</div>
                   <div style="font-size:0.8rem;color:var(--text-muted)">
-                    📞 ${r.customer_phone}
+                     ${r.customer_phone}
                     ${r.customer_email ? ` · ✉️ ${r.customer_email}` : ''}
                   </div>
                   <div style="font-size:0.8rem;margin-top:0.25rem">
-                    🕐 ${r.reserved_time?.slice(0,5)} · 👥 ${r.party_size} guests
+                     ${r.reserved_time?.slice(0,5)} · 👥 ${r.party_size} guests
                     ${r.table_number ? ` · Table ${r.table_number}` : ''}
                   </div>
                   ${r.notes ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.2rem;font-style:italic">"${r.notes}"</div>` : ''}
@@ -2515,7 +2515,7 @@ function waiterOpenTableModal(tableId) {
       ${t.status !== 'available' ? `
         <div style="padding:0.5rem 0.75rem;background:#fffbeb;border:1px solid #d97706;
                     border-radius:var(--radius);font-size:var(--text-sm);color:#92400e;margin-bottom:0.75rem">
-          ⚠️ Table is <strong>${t.status}</strong> — you can still place an order.
+           Table is <strong>${t.status}</strong> — you can still place an order.
         </div>` : ''}
 
       <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.08em;color:var(--text-muted);
