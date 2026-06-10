@@ -1,17 +1,18 @@
-from django.db import migrations
+from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
 
     dependencies = [
         ('orders', '0004_reservation_takeaway'),
+        ('orders', '0005_add_order_type'),
     ]
 
     operations = [
         migrations.AlterField(
             model_name='reservation',
             name='status',
-            field=__import__('django.db.models', fromlist=['CharField']).CharField(
+            field=models.CharField(
                 choices=[
                     ('pending',   'Pending'),
                     ('confirmed', 'Confirmed'),
