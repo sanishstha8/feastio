@@ -5,7 +5,16 @@ let STATE = {
   currentPage: 'landing',
   refreshInterval: null,
 };
-
+// ── Cross-tab sync ────────────────────────────────────────────────────────────
+const _syncChannel = new BroadcastChannel('feastio_sync');
+_syncChannel.onmessage = (e) => {
+  if (e.data === 'tables_updated') {
+    if (STATE.user?.role === 'waiter') loadStaffData();
+    else if (STATE.user?.role === 'manager') {
+      loadAllData().then(() => renderTablesOrders());
+    }
+  }
+};
 // ── Toast ─────────────────────────────────────────────────────────────────────
 function toast(msg, type = 'success') {
   const c = document.getElementById('toast-container');
@@ -132,14 +141,16 @@ async function loadAllData() {
 
 async function loadStaffData() {
   try {
-    const [tables, orders, items] = await Promise.all([
+    const [tables, orders, items, takeaways] = await Promise.all([
       api.get('/orders/tables/'),
       api.get('/orders/orders/'),
       api.get('/menu/items/'),
+      api.get('/orders/takeaways/'),
     ]);
-    STATE.tables    = (tables.results ?? tables);
-    STATE.orders    = (orders.results ?? orders);
-    STATE.menuItems = (items.results  ?? items);
+    STATE.tables     = (tables.results   ?? tables);
+    STATE.orders     = (orders.results   ?? orders);
+    STATE.menuItems  = (items.results    ?? items);
+    STATE.takeaways  = (takeaways.results ?? takeaways);
     if (STATE.user.role === 'waiter') renderWaiterView();
     else renderKitchenView();
   } catch(e) { toast('Failed to load data', 'error'); }
@@ -1370,8 +1381,9 @@ function renderCashierView(tab) {
 
   const activeTakeaways   = (STATE.takeaways    || []).filter(t => !['picked_up','cancelled'].includes(t.status));
   const todayReservations = (STATE.reservations || []).filter(r => {
-    const today = new Date().toISOString().split('T')[0];
-    return r.reserved_date === today && !['cancelled','no_show'].includes(r.status);
+  if (['cancelled', 'no_show', 'completed'].includes(r.status)) return false;
+  const today = new Date().toDateString();
+  return new Date(r.reserved_date).toDateString() === today;
   });
 
   document.getElementById('cashier-view').innerHTML = `
@@ -1587,16 +1599,33 @@ function cashierTakeawayTab(activeTakeaways) {
                     ${t.is_paid ? '✅ Paid · ' : '⚠️ Unpaid · '} ${t.payment_method.toUpperCase()}
                     · ${new Date(t.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}
                   </div>
+
+                  <!-- Kitchen status info (read-only for cashier) -->
+                  ${t.status === 'pending' ? `
+                    <div style="padding:0.5rem;background:#fffbeb;border:1px solid #d97706;border-radius:var(--radius);font-size:0.8rem;text-align:center;margin-bottom:0.5rem">
+                      ⏳ Waiting for kitchen to start preparing
+                    </div>
+                  ` : t.status === 'preparing' ? `
+                    <div style="padding:0.5rem;background:#eff6ff;border:1px solid #2563eb;border-radius:var(--radius);font-size:0.8rem;text-align:center;margin-bottom:0.5rem">
+                      👨‍🍳 Kitchen is preparing this order...
+                    </div>
+                  ` : t.status === 'ready' ? `
+                    <div style="padding:0.5rem;background:#f0fdf4;border:1px solid #16a34a;border-radius:var(--radius);font-size:0.8rem;text-align:center;margin-bottom:0.5rem">
+                      ✅ Ready for pickup!
+                    </div>
+                  ` : ''}
+
+                  <!-- Cashier actions only -->
                   <div style="display:flex;flex-direction:column;gap:0.4rem;margin-top:0.5rem">
-                    ${t.status === 'pending' ? `
-                      <button class="btn btn-primary w-full" onclick="takeawaySetStatus(${t.id},'preparing')">👨‍🍳 Start Preparing</button>
-                    ` : t.status === 'preparing' ? `
-                      <button class="btn btn-primary w-full" onclick="takeawaySetStatus(${t.id},'ready')">✅ Mark Ready</button>
-                    ` : t.status === 'ready' ? `
-                      <button class="btn btn-primary w-full" onclick="takeawayPickedUp(${t.id},${t.is_paid})">📦 Mark Picked Up</button>
+                    ${t.status === 'ready' ? `
+                      <button class="btn btn-primary w-full" onclick="takeawayPickedUp(${t.id},${t.is_paid})">
+                        📦 Mark Picked Up
+                      </button>
                     ` : ''}
                     ${!t.is_paid ? `
-                      <button class="btn btn-outline w-full btn-sm" onclick="takeawayMarkPaid(${t.id})">💵 Mark Paid</button>
+                      <button class="btn btn-outline w-full btn-sm" onclick="takeawayMarkPaid(${t.id})">
+                        💵 Mark Paid
+                      </button>
                     ` : ''}
                     ${t.status !== 'cancelled' ? `
                       <button class="btn btn-outline w-full btn-sm" style="color:#dc2626;border-color:#dc2626"
@@ -1919,8 +1948,22 @@ async function submitReservation() {
     table: table ? parseInt(table) : null, notes,
   };
   try {
-    if (id) await api.patch('/orders/reservations/'+id+'/', body);
-    else    await api.post('/orders/reservations/', body);
+    if (id) {
+      await api.patch('/orders/reservations/'+id+'/', body);
+    } else {
+      const newResv = await api.post('/orders/reservations/', body);
+      const assignedTable = newResv.table_number
+        ? `Table ${newResv.table_number} assigned.`
+        : 'No available table found — please assign manually.';
+      closeModal('reservation-modal');
+      toast(`Reservation saved! ${assignedTable}`);
+      // Refresh tables so admin/waiter see the reserved table
+      const tables = await api.get('/orders/tables/');
+      STATE.tables = tables.results ?? tables;
+      try { _syncChannel.postMessage('tables_updated'); } catch(e) {}
+      loadCashierData();
+      return;
+    }
     closeModal('reservation-modal');
     toast(id ? 'Reservation updated!' : 'Reservation saved!');
     loadCashierData();
@@ -1933,6 +1976,11 @@ async function submitReservation() {
 async function resvSetStatus(id, newStatus) {
   try {
     await api.patch('/orders/reservations/'+id+'/set-status/', { status: newStatus });
+
+const tables = await api.get('/orders/tables/');
+    STATE.tables = tables.results ?? tables;
+    try { _syncChannel.postMessage('tables_updated'); } catch(e) {}
+
     toast('Reservation updated!');
     loadCashierData();
   } catch { toast('Failed to update reservation', 'error'); }
@@ -2752,9 +2800,13 @@ async function submitWaiterOrder() {
 }
 
 function renderKitchenView() {
-  const active = STATE.orders.filter(o => o.status === 'active');
-  const pending   = active.reduce((s,o) => s + (o.items||[]).filter(i=>i.status==='pending').length, 0);
-  const preparing = active.reduce((s,o) => s + (o.items||[]).filter(i=>i.status==='preparing').length, 0);
+  const active    = STATE.orders.filter(o => o.status === 'active');
+  const takeaways = (STATE.takeaways || []).filter(t => ['pending','preparing'].includes(t.status));
+
+  const pending   = active.reduce((s,o) => s + (o.items||[]).filter(i=>i.status==='pending').length, 0)
+                  + takeaways.filter(t => t.status === 'pending').length;
+  const preparing = active.reduce((s,o) => s + (o.items||[]).filter(i=>i.status==='preparing').length, 0)
+                  + takeaways.filter(t => t.status === 'preparing').length;
   const ready     = active.reduce((s,o) => s + (o.items||[]).filter(i=>i.status==='ready').length, 0);
 
   document.getElementById('staff-view').innerHTML = `
@@ -2763,35 +2815,100 @@ function renderKitchenView() {
       <div class="stat-card" style="background:var(--blue-bg)"><div class="stat-label">Preparing</div><div class="stat-value" style="color:var(--blue)">${preparing}</div></div>
       <div class="stat-card" style="background:var(--green-bg)"><div class="stat-label">Ready</div><div class="stat-value" style="color:var(--green)">${ready}</div></div>
     </div>
+
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
-      <h2 style="font-size:1rem;font-weight:600">Incoming Orders</h2>
-      <button class="btn btn-outline btn-sm" onclick="loadStaffData()">${icons.refresh} Refresh</button>
+      <h2 style="font-size:1rem;font-weight:600">Dine-In Orders</h2>
+      <button class="btn btn-outline btn-sm" onclick="kitchenRefreshAll()">${icons.refresh} Refresh</button>
     </div>
-    ${active.length === 0 ? '<div class="empty-state"><p>Kitchen is clear! 🍽️</p></div>' : `
-      <div class="kitchen-grid">
-        ${active.map(o => `
-          <div class="kitchen-card">
-            <div class="kitchen-card-header">
-              <span style="font-weight:700">Table ${o.table_number}</span>
-              <span style="font-size:0.75rem;color:var(--text-muted)">${new Date(o.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>
-            </div>
-            ${(o.items||[]).map(item => `
-              <div class="kitchen-item">
-                <div class="kitchen-item-name">${item.quantity}x ${item.menu_item_name}</div>
-                <span class="badge ${item.status==='pending'?'badge-yellow':item.status==='preparing'?'badge-blue':item.status==='ready'?'badge-green':'badge-gray'}">${item.status}</span>
-                ${item.status !== 'served' ? `
-                  <button class="btn btn-outline btn-sm w-full" style="margin-top:0.5rem"
-                    onclick="kitchenUpdateItem(${o.id}, ${item.id}, '${item.status}')">
-                    ${item.status==='pending'?'Start Preparing':item.status==='preparing'?'Mark Ready':'Mark Served'}
-                  </button>
-                ` : `<div style="font-size:0.75rem;text-align:center;color:var(--text-muted);margin-top:0.5rem">✓ Served</div>`}
+    ${active.length === 0
+      ? '<div class="empty-state" style="margin-bottom:1.5rem"><p>No dine-in orders</p></div>'
+      : `<div class="kitchen-grid" style="margin-bottom:1.5rem">
+          ${active.map(o => `
+            <div class="kitchen-card">
+              <div class="kitchen-card-header">
+                <span style="font-weight:700">Table ${o.table_number}</span>
+                <span style="font-size:0.75rem;color:var(--text-muted)">${new Date(o.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>
               </div>
-            `).join('')}
-          </div>
-        `).join('')}
-      </div>
-    `}
+              ${(o.items||[]).map(item => `
+                <div class="kitchen-item">
+                  <div class="kitchen-item-name">${item.quantity}x ${item.menu_item_name}</div>
+                  <span class="badge ${item.status==='pending'?'badge-yellow':item.status==='preparing'?'badge-blue':item.status==='ready'?'badge-green':'badge-gray'}">${item.status}</span>
+                  ${item.status !== 'served' ? `
+                    <button class="btn btn-outline btn-sm w-full" style="margin-top:0.5rem"
+                      onclick="kitchenUpdateItem(${o.id}, ${item.id}, '${item.status}')">
+                      ${item.status==='pending'?'Start Preparing':item.status==='preparing'?'Mark Ready':'Mark Served'}
+                    </button>
+                  ` : `<div style="font-size:0.75rem;text-align:center;color:var(--text-muted);margin-top:0.5rem">✓ Served</div>`}
+                </div>
+              `).join('')}
+            </div>
+          `).join('')}
+        </div>`
+    }
+
+    <!-- Takeaway orders section -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <h2 style="font-size:1rem;font-weight:600">
+        Takeaway Orders
+        ${takeaways.length > 0 ? `<span class="badge badge-orange" style="margin-left:0.5rem">${takeaways.length}</span>` : ''}
+      </h2>
+    </div>
+    ${takeaways.length === 0
+      ? '<div class="empty-state"><p>No takeaway orders to prepare</p></div>'
+      : `<div class="kitchen-grid">
+          ${takeaways.map(t => `
+            <div class="kitchen-card" style="border-color:var(--orange)">
+              <div class="kitchen-card-header" style="background:var(--orange-light)">
+                <div>
+                  <span style="font-weight:700">🥡 Takeaway #${t.id}</span>
+                  <div style="font-size:0.72rem;color:var(--text-muted)">${t.customer_name} · 📞 ${t.customer_phone}</div>
+                </div>
+                <span style="font-size:0.75rem;color:var(--text-muted)">${new Date(t.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>
+              </div>
+              ${(t.takeaway_items||[]).map(item => `
+                <div class="kitchen-item">
+                  <div class="kitchen-item-name">${item.quantity}x ${item.menu_item_name}</div>
+                </div>
+              `).join('')}
+              <div style="padding:0.5rem 1rem">
+                ${t.status === 'pending' ? `
+                  <button class="btn btn-primary w-full" onclick="kitchenTakeawayUpdate(${t.id},'preparing')">
+                    Start Preparing
+                  </button>
+                ` : t.status === 'preparing' ? `
+                  <button class="btn btn-primary w-full" onclick="kitchenTakeawayUpdate(${t.id},'ready')">
+                    Mark Ready
+                  </button>
+                ` : ''}
+              </div>
+            </div>
+          `).join('')}
+        </div>`
+    }
   `;
+}
+
+async function kitchenTakeawayUpdate(takeawayId, newStatus) {
+  try {
+    await api.patch(`/orders/takeaways/${takeawayId}/set-status/`, { status: newStatus });
+    const t = (STATE.takeaways||[]).find(t => t.id === takeawayId);
+    if (t) t.status = newStatus;
+    renderKitchenView();
+    toast(newStatus === 'ready' ? 'Takeaway marked ready!' : 'Takeaway started!');
+  } catch { toast('Failed to update takeaway', 'error'); }
+}
+
+async function kitchenRefreshAll() {
+  try {
+    const [orders, takeaways] = await Promise.all([
+      api.get('/orders/orders/'),
+      api.get('/orders/takeaways/'),
+    ]);
+    STATE.orders   = orders.results   ?? orders;
+    STATE.takeaways = takeaways.results ?? takeaways;
+    renderKitchenView();
+    toast('Refreshed');
+  } catch { toast('Failed to refresh', 'error'); }
 }
 
 const nextStatusMap = { pending: 'preparing', preparing: 'ready', ready: 'served' };

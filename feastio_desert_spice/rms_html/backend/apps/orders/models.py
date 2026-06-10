@@ -96,6 +96,7 @@ class Reservation(models.Model):
         PENDING   = 'pending',   'Pending'
         CONFIRMED = 'confirmed', 'Confirmed'
         SEATED    = 'seated',    'Seated'
+        COMPLETED = 'completed', 'Completed'
         CANCELLED = 'cancelled', 'Cancelled'
         NO_SHOW   = 'no_show',   'No Show'
 

@@ -2,10 +2,10 @@ from django.utils import timezone
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import Table, Order, OrderItem
+from .models import Table, Order, OrderItem, Reservation
 from .serializers import (
     TableSerializer, OrderSerializer,
-    CreateOrderSerializer, OrderItemSerializer
+    CreateOrderSerializer, OrderItemSerializer, ReservationSerializer,
 )
 
 class IsManagerOrReadOnly(permissions.BasePermission):
@@ -84,6 +84,9 @@ class OrderViewSet(viewsets.ModelViewSet):
         order.save()
         order.table.status = 'available'
         order.table.save()
+        order.table.status = 'available'
+        order.table.save()
+       # Do NOT touch reservation here — it gets marked completed after payment
         return Response(OrderSerializer(order).data)
 
     @action(detail=True, methods=['patch'], url_path='cancel')
@@ -168,6 +171,19 @@ class PaymentViewSet(viewsets.ModelViewSet):
         serializer = CreatePaymentSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         payment = serializer.save()
+        # After payment — mark the seated reservation as completed so it disappears
+        try:
+            order = payment.order
+            if order and order.table:
+                active_resv = Reservation.objects.filter(
+                    table=order.table,
+                    status='seated'
+                ).first()
+                if active_resv:
+                    active_resv.status = 'completed'
+                    active_resv.save()
+        except Exception:
+            pass  # Don't let this break the payment
         return Response(PaymentSerializer(payment).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['patch'], url_path='refund')
@@ -186,11 +202,27 @@ from .serializers import (
     ReservationSerializer,
     TakeawaySerializer, CreateTakeawaySerializer,
 )
-
 class ReservationViewSet(viewsets.ModelViewSet):
     queryset = Reservation.objects.select_related('table').all()
     serializer_class = ReservationSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def create(self, request, *args, **kwargs):
+        serializer = ReservationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reservation = serializer.save()
+        if not reservation.table:
+            available_table = Table.objects.filter(
+                status='available',
+                capacity__gte=reservation.party_size
+            ).order_by('capacity').first()
+            if available_table:
+                reservation.table = available_table
+                reservation.save()
+        if reservation.table:
+            reservation.table.status = 'reserved'
+            reservation.table.save()
+        return Response(ReservationSerializer(reservation).data, status=status.HTTP_201_CREATED)
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -211,11 +243,12 @@ class ReservationViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Invalid status'}, status=status.HTTP_400_BAD_REQUEST)
         reservation.status = new_status
         reservation.save()
-        # If seated, mark table as occupied
+        if new_status == 'confirmed' and reservation.table:
+            reservation.table.status = 'reserved'
+            reservation.table.save()
         if new_status == 'seated' and reservation.table:
             reservation.table.status = 'occupied'
             reservation.table.save()
-        # If cancelled/no_show, free the table
         if new_status in ['cancelled', 'no_show'] and reservation.table:
             reservation.table.status = 'available'
             reservation.table.save()
