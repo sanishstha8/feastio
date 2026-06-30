@@ -214,6 +214,10 @@ function renderManagerShell() {
       </div>
     </div>
     <div class="main-content">
+      <div class="mobile-topbar">
+        <button id="mobile-menu-btn" class="mobile-menu-btn" onclick="toggleMobileSidebar()">☰</button>
+        <h1 id="mobile-topbar-title">Dashboard</h1>
+      </div>
       <div id="page-inner" class="page-content"></div>
     </div>
   `;
@@ -225,6 +229,10 @@ function navigateTo(page) {
   document.querySelector(`.nav-item[onclick="navigateTo('${page}')"]`)?.classList.add('active');
   const fns = { dashboard: renderDashboard, 'tables-orders': renderTablesOrders, menu: renderMenu, staff: renderStaff, reports: renderReports };
   if (fns[page]) fns[page]();
+  closeMobileSidebar();
+  const labels = { dashboard: 'Dashboard', 'tables-orders': 'Tables & Orders', menu: 'Menu', staff: 'Staff', reports: 'Reports' };
+  const titleEl = document.getElementById('mobile-topbar-title');
+  if (titleEl && labels[page]) titleEl.textContent = labels[page];
 }
 
 function setInner(html) {
@@ -2949,6 +2957,20 @@ async function kitchenUpdateItem(orderId, itemId, currentStatus) {
 function openModal(id) { document.getElementById(id)?.classList.remove('hidden'); }
 function closeModal(id) { document.getElementById(id)?.classList.add('hidden'); }
 
+function toggleMobileSidebar() {
+  const sidebar = document.querySelector('.sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+  if (!sidebar) return;
+  sidebar.classList.toggle('open');
+  overlay.style.display = sidebar.classList.contains('open') ? 'block' : 'none';
+}
+
+function closeMobileSidebar() {
+  const sidebar = document.querySelector('.sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+  sidebar?.classList.remove('open');
+  if (overlay) overlay.style.display = 'none';
+}
 // ── Landing Page Logic ────────────────────────────────────────────────────────
 function initLanding() {
   document.querySelectorAll('.auth-tab').forEach(tab => {

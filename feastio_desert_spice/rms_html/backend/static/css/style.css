@@ -135,7 +135,7 @@ a { text-decoration: none; color: inherit; }
 .demo-accounts span { display: block; color: var(--text-muted); line-height: 1.8; }
 
 /* ── App Shell ───────────────────────────────────────────────── */
-#app-shell { display: flex; min-height: 100vh; }
+#app-shell { display: flex; min-height: 100vh; max-width: 100vw; overflow-x: hidden; }
 .sidebar { width: var(--sidebar-w); background: #89471b; border-right: 1px solid #4a2e18; display: flex; flex-direction: column; position: fixed; top: 0; left: 0; height: 100vh; z-index: 100; }
 .sidebar-logo { padding: 1.25rem; display: flex; align-items: center; gap: 0.6rem; border-bottom: 1px solid #4a2e18; }
 .sidebar-logo-icon { width: 2rem; height: 2rem; background: var(--orange); border-radius: 0.4rem; display: flex; align-items: center; justify-content: center; color: white; font-size: 1rem; flex-shrink: 0; }
@@ -151,7 +151,7 @@ a { text-decoration: none; color: inherit; }
 .user-avatar { width: 2rem; height: 2rem; background: var(--orange); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 0.8rem; font-weight: 600; flex-shrink: 0; }
 .user-name { font-size: var(--text-sm); font-weight: 500; color: #fdf0e0; }
 .user-role { font-size: 0.75rem; color: #c4a882; text-transform: capitalize; }
-.main-content { margin-left: var(--sidebar-w); flex: 1; min-height: 100vh; }
+.main-content { margin-left: var(--sidebar-w); flex: 1; min-height: 100vh; min-width: 0; max-width: 100%; }
 .page-content { padding: 2rem; }
 .page-header { margin-bottom: 2rem; display: flex; align-items: flex-start; justify-content: space-between; }
 .page-header h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 0.25rem; font-family: 'Lora', Georgia, serif; color: #2c1a0e; }
@@ -247,12 +247,127 @@ a { text-decoration: none; color: inherit; }
 
 /* ── Two column layout ───────────────────────────────────────── */
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
-@media (max-width: 768px) {
+
+/* ── Mobile hamburger toggle button ──────────────────────────── */
+.mobile-menu-btn {
+  display: none;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex-shrink: 0;
+  background: var(--orange);
+  color: white;
+  border-radius: var(--radius);
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-md);
+}
+
+.mobile-topbar {
+  display: none;
+  position: sticky;
+  top: 0;
+  z-index: 120;
+  background: var(--bg);
+  padding: 0.75rem 1rem;
+  align-items: center;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+.mobile-topbar h1 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+}
+
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 99;
+}
+
+@media (max-width: 1024px) {
+  .stats-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+  .orders-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+}
+
+@media (max-width: 900px) {
   .grid-2 { grid-template-columns: 1fr; }
-  .sidebar { transform: translateX(-100%); }
-  .main-content { margin-left: 0; }
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    z-index: 150;
+  }
+  .sidebar.open { transform: translateX(0); }
+  .sidebar.open ~ .sidebar-overlay,
+  body.sidebar-open .sidebar-overlay { display: block; }
+
+  .main-content { margin-left: 0; width: 100%; max-width: 100vw; overflow-x: hidden; }
+  .mobile-menu-btn { display: flex; }
+  .page-content { padding: 1rem; }
+  .mobile-topbar { display: flex; }
+  .page-header { flex-direction: column; align-items: stretch; gap: 0.75rem; }
+  .page-header > div:last-child { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .page-header h1 { display: none; }
+  .staff-header { padding: 0.75rem 1rem; flex-wrap: wrap; gap: 0.5rem; }
+  .staff-content { padding: 1rem; }
+
   .landing-roles { grid-template-columns: 1fr; }
   .form-grid-2 { grid-template-columns: 1fr; }
+
+  .stats-grid,
+  .stats-grid[style] {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 0.6rem !important;
+  }
+  .tables-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+  .orders-grid, .menu-grid, .staff-grid, .kitchen-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .modal { max-width: 95vw; max-height: 92vh; margin: 0 0.5rem; }
+  .modal-lg { max-width: 95vw; }
+  .modal-header { padding: 1rem 1rem 0; flex-wrap: wrap; gap: 0.5rem; }
+  .modal-body { padding: 1rem; }
+  .modal-footer { padding: 0 1rem 1rem; flex-wrap: wrap; }
+  .modal-footer .btn { flex: 1; min-width: 120px; }
+
+  /* Tab bars (cashier portal billing/takeaway/reservation tabs) */
+  div[style*="border-bottom:2px solid var(--border)"][style*="display:flex"] {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Inline 3 / 4 column grids used in waiter, cashier, kitchen JS views */
+  div[style*="grid-template-columns:repeat(3,1fr)"],
+  div[style*="grid-template-columns:repeat(4,1fr)"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  div[style*="grid-template-columns:1fr 1fr 1fr auto"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  .order-card-body { padding: 0.85rem; }
+  .item-status-btns { gap: 0.2rem; }
+  .item-status-btn { font-size: 0.7rem; padding: 0.2rem 0.45rem; }
+  .order-actions { flex-direction: column; }
+
+  #page-landing { padding: 1.25rem; }
+
+  table { display: block; overflow-x: auto; white-space: nowrap; }
+}
+
+@media (max-width: 480px) {
+  .stats-grid,
+  .stats-grid[style] { grid-template-columns: 1fr !important; }
+  .page-header h1 { font-size: 1.3rem; }
+  .sidebar-title h1 { font-size: 1.1rem; }
+  .staff-header { padding-left: 1rem; }
 }
 
 /* ── Payment System ─────────────────────────────────── */
