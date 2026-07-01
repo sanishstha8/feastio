@@ -1,3 +1,4 @@
+@import url("https://fonts.googleapis.com/css2?family=Lora:wght@400;600;700&family=DM+Sans:wght@400;500;600&display=swap");
 /* ── Reset & Base ─────────────────────────────────────────────── */
 *,
 *::before,
@@ -37,7 +38,6 @@
   --purple-border: #ddd6fe;
   --sidebar-w: 240px;
 }
-@import url("https://fonts.googleapis.com/css2?family=Lora:wght@400;600;700&family=DM+Sans:wght@400;500;600&display=swap");
 body {
   font-family:
     "DM Sans",
