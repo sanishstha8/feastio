@@ -84,6 +84,8 @@ async function checkAuth() {
 function startAutoRefresh() {
   if (STATE.refreshInterval) clearInterval(STATE.refreshInterval);
   STATE.refreshInterval = setInterval(async () => {
+    const modalOpen = document.querySelector('.modal-overlay:not(.hidden)');
+    if (modalOpen) return; // don't wipe an in-progress form (e.g. reservation modal)
     if (STATE.user?.role === 'manager') await loadAllData();
     else if (STATE.user?.role === 'cashier') await loadCashierData();
     else await loadStaffData();
