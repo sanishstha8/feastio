@@ -208,7 +208,6 @@ a { text-decoration: none; color: inherit; }
 .menu-item-bottom { display: flex; justify-content: space-between; align-items: center; margin-top: 0.25rem; }
 .menu-item-price { font-size: 1.1rem; font-weight: 700; color: var(--orange); }
 .menu-item-actions { display: flex; gap: 0.35rem; }
-
 /* ── Staff ───────────────────────────────────────────────────── */
 .staff-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
 .staff-card { background: white; border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem; }
