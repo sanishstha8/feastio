@@ -549,15 +549,23 @@ async function completeOrderFromModal(orderId) {
     toast(`Kitchen hasn't finished yet: ${names}`, 'error');
     return;
   }
-  try {
+   try {
     await api.patch(`/orders/orders/${orderId}/complete/`);
-    const [orders, tables] = await Promise.all([api.get('/orders/orders/'), api.get('/orders/tables/')]);
+    const [orders, tables] = await Promise.all([
+      api.get('/orders/orders/'),
+      api.get('/orders/tables/'),
+    ]);
     STATE.orders = orders.results ?? orders;
     STATE.tables = tables.results ?? tables;
     closeModal('table-modal');
-    renderManagerView();
-    toast('Order completed — sent to cashier!');
-  } catch { toast('Failed to complete order', 'error'); }
+    renderTablesOrders();
+    toast('Order completed!');
+  } catch(e) {
+    try {
+      const err = JSON.parse(e.message);
+      toast(err.error || 'Failed to complete order', 'error');
+    } catch { toast('Failed to complete order', 'error'); }
+  }
 }
 
 async function cancelOrderFromModal(orderId) {
@@ -592,6 +600,7 @@ async function refreshTablesOrders() {
 }
 
 function renderOrderCard(o) {
+  const allServed = (o.items||[]).every(i => ['ready','served'].includes(i.status));
   return `
     <div class="order-card">
       <div class="order-card-header">
@@ -614,8 +623,14 @@ function renderOrderCard(o) {
           </div>
         `).join('')}
         <div class="order-total"><span>Total</span><span>NRs ${parseFloat(o.total).toFixed(2)}</span></div>
+
+
         <div class="order-actions">
-          <button class="btn btn-primary w-full" onclick="completeOrder(${o.id})">${icons.check} Complete</button>
+          <button class="btn w-full ${allServed ? 'btn-primary' : 'btn-outline'}"
+            onclick="completeOrder(${o.id})"
+            ${!allServed ? 'title="All items must be ready or served first"' : ''}>
+            ${icons.check} Complete Order
+          </button>
           <button class="btn btn-danger btn-sm" onclick="cancelOrder(${o.id})">${icons.x}</button>
         </div>
       </div>
@@ -774,13 +789,22 @@ async function completeOrder(orderId) {
   }
   try {
     await api.patch(`/orders/orders/${orderId}/complete/`);
-    const [orders, tables] = await Promise.all([api.get('/orders/orders/'), api.get('/orders/tables/')]);
+    const [orders, tables] = await Promise.all([
+      api.get('/orders/orders/'),
+      api.get('/orders/tables/'),
+    ]);
     STATE.orders = orders.results ?? orders;
     STATE.tables = tables.results ?? tables;
-    renderManagerView();
-    toast('Order completed — sent to cashier!');
-  } catch { toast('Failed to complete order', 'error'); }
+    renderTablesOrders();
+    toast('Order completed!');
+  } catch(e) {
+    try {
+      const err = JSON.parse(e.message);
+      toast(err.error || 'Failed to complete order', 'error');
+    } catch { toast('Failed to complete order', 'error'); }
+  }
 }
+
 
 async function cancelOrder(orderId) {
   try {
