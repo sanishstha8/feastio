@@ -798,10 +798,11 @@ async function cancelOrder(orderId) {
 // ── Menu Page ─────────────────────────────────────────────────────────────────
 function renderMenu() {
   const categories = [...new Set(STATE.menuItems.map(m => m.category_name))].filter(Boolean);
+
   setInner(`
     <div class="page-header">
-      <div><h1>Menu</h1><p></p></div>
-      <div style="display:flex;gap:0.5rem;align-items:center">
+      <div><h1>Menu</h1></div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
         <input class="form-input" id="admin-menu-search"
           placeholder="🔍 Search menu items..."
           oninput="adminFilterMenu(this.value)"
@@ -810,39 +811,100 @@ function renderMenu() {
         <button class="btn btn-primary" onclick="openMenuModal()">${icons.plus} Add Item</button>
       </div>
     </div>
-    <div id="admin-menu-categories">
-    ${STATE.menuItems.length === 0 ? '<div class="empty-state"><p>No menu items yet</p></div>' :
-      categories.map(cat => {
-        const items = STATE.menuItems.filter(m => m.category_name === cat);
+
+    <!-- Category filter tabs -->
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1.5rem">
+      <button class="menu-cat-btn active" onclick="filterMenuCategory('all', this)">
+        All <span class="badge badge-orange" style="margin-left:0.25rem">${STATE.menuItems.length}</span>
+      </button>
+      ${categories.map(cat => {
+        const count = STATE.menuItems.filter(m => m.category_name === cat).length;
         return `
-          <div class="menu-category" data-cat="${cat}">
-            <h2>${cat}</h2>
-            <div class="menu-grid">
-              ${items.map(item => `
-                <div class="menu-item-card" data-name="${item.name.toLowerCase()}">
-                  ${item.image ? `<img src="${item.image}" style="width:100%;height:140px;object-fit:cover;border-radius:var(--radius) var(--radius) 0 0" onerror="this.style.display='none'">` : ''}
-                  <div class="menu-item-top">
-                    <div class="menu-item-name">${item.name}</div>
-                    <span class="badge ${item.available ? 'badge-green' : 'badge-gray'} clickable-badge" onclick="toggleMenuItem(${item.id})"> ${item.available ? 'Available' : 'Off'} </span>
-                  </div>
-                  <div class="menu-item-desc">${item.description || ''}</div>
-                  <div class="menu-item-bottom">
-                    <div class="menu-item-price">NRs ${parseFloat(item.price).toFixed(2)}</div>
-                    <div class="menu-item-actions">
-                      <button class="icon-btn" onclick="openMenuModal(${item.id})" title="Edit">${icons.edit}</button>
-                      <button class="icon-btn" onclick="deleteMenuItem(${item.id})" title="Delete">${icons.trash}</button>
-                    </div>
-                  </div>
-                </div>
-              `).join('')}
-            </div>
-          </div>
+          <button class="menu-cat-btn" onclick="filterMenuCategory('${cat}', this)">
+            ${cat} <span class="badge badge-gray" style="margin-left:0.25rem">${count}</span>
+          </button>
         `;
-      }).join('')
-    }
+      }).join('')}
+    </div>
+
+    <div id="admin-menu-categories">
+      ${STATE.menuItems.length === 0
+        ? '<div class="empty-state"><p>No menu items yet</p></div>'
+        : categories.map(cat => {
+            const items = STATE.menuItems.filter(m => m.category_name === cat);
+            return `
+              <div class="menu-category" data-cat="${cat}">
+                <h2>${cat}</h2>
+                <div class="menu-grid">
+                  ${items.map(item => `
+                    <div class="menu-item-card" data-name="${item.name.toLowerCase()}" data-cat="${cat}">
+                      ${item.image ? `<img src="${item.image}" style="width:100%;height:140px;object-fit:cover;border-radius:var(--radius) var(--radius) 0 0" onerror="this.style.display='none'">` : ''}
+                      <div class="menu-item-top">
+                        <div class="menu-item-name">${item.name}</div>
+                        <span class="badge ${item.available ? 'badge-green' : 'badge-gray'} clickable-badge" onclick="toggleMenuItem(${item.id})">${item.available ? 'Available' : 'Off'}</span>
+                      </div>
+                      <div class="menu-item-desc">${item.description || ''}</div>
+                      <div class="menu-item-bottom">
+                        <div class="menu-item-price">NRs ${parseFloat(item.price).toFixed(2)}</div>
+                        <div class="menu-item-actions">
+                          <button class="icon-btn" onclick="openMenuModal(${item.id})" title="Edit">${icons.edit}</button>
+                          <button class="icon-btn" onclick="deleteMenuItem(${item.id})" title="Delete">${icons.trash}</button>
+                        </div>
+                      </div>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            `;
+          }).join('')
+      }
     </div>
     ${menuFormModal()}
   `);
+}
+
+function filterMenuCategory(cat, btn) {
+  // Update active button
+  document.querySelectorAll('.menu-cat-btn').forEach(b => {
+    b.classList.remove('active');
+    b.querySelector('.badge')?.classList.replace('badge-orange', 'badge-gray');
+  });
+  btn.classList.add('active');
+  btn.querySelector('.badge')?.classList.replace('badge-gray', 'badge-orange');
+
+  // Show/hide sections
+  document.querySelectorAll('.menu-category').forEach(section => {
+    if (cat === 'all') {
+      section.style.display = '';
+    } else {
+      section.style.display = section.getAttribute('data-cat') === cat ? '' : 'none';
+    }
+  });
+
+  // Clear search when switching category
+  const searchEl = document.getElementById('admin-menu-search');
+  if (searchEl) searchEl.value = '';
+}
+
+function adminFilterMenu(query) {
+  const q = query.toLowerCase().trim();
+
+  // Reset category filter to all when searching
+  if (q) {
+    document.querySelectorAll('.menu-cat-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.menu-category').forEach(s => s.style.display = '');
+  }
+
+  document.querySelectorAll('#admin-menu-categories .menu-category').forEach(section => {
+    let anyVisible = false;
+    section.querySelectorAll('.menu-item-card').forEach(card => {
+      const name = card.getAttribute('data-name') || '';
+      const show = !q || name.includes(q);
+      card.style.display = show ? '' : 'none';
+      if (show) anyVisible = true;
+    });
+    section.style.display = anyVisible ? '' : 'none';
+  });
 }
 
 function adminFilterMenu(query) {
