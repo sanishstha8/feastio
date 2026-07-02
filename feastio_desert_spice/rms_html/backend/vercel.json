@@ -13,7 +13,13 @@
     }
   ],
   "routes": [
-    { "src": "/static/(.*)", "dest": "/$1" },
-    { "src": "/(.*)", "dest": "config/wsgi.py" }
+    {
+      "src": "/static/(.*)",
+      "dest": "/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "config/wsgi.py"
+    }
   ]
 }

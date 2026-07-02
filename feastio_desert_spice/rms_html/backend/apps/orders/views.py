@@ -210,6 +210,12 @@ class ReservationViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         serializer = ReservationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        chosen_table = serializer.validated_data.get('table')
+        if chosen_table and chosen_table.status != 'available':
+            return Response(
+                {'error': f'Table {chosen_table.number} is not available.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         reservation = serializer.save()
         if not reservation.table:
             available_table = Table.objects.filter(

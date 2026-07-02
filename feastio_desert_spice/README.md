@@ -29,3 +29,4 @@ See `SETUP_WINDOWS.md` for full installation guide.
 | Manager | admin@restaurant.com | admin123 |
 | Waiter | waiter@restaurant.com | waiter123 |
 | Kitchen | kitchen@restaurant.com | kitchen123 |
+| Cashier | cashier@restaurant.com | cashier123 |

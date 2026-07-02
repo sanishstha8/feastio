@@ -335,6 +335,7 @@ function renderTablesOrders(tab = 'live') {
       <div><h1>Tables & Orders</h1></div>
       <div style="display:flex;gap:0.5rem">
         <button class="btn btn-outline btn-sm" onclick="refreshTablesOrders()">${icons.refresh} Refresh</button>
+        <button class="btn btn-outline" onclick="openAddTableModal()">${icons.plus} Add Table</button>
         <button class="btn btn-primary" onclick="openNewOrderModal()">${icons.plus} New Order</button>
       </div>
     </div>
@@ -385,6 +386,7 @@ function renderTablesOrders(tab = 'live') {
         </div>
       `}
       ${tableDetailModal()}
+      ${tableFormModal()}
       ${newOrderModal()}
     ` : `
       <!-- Order History tab -->
@@ -510,9 +512,7 @@ function openTableModal(tableId) {
       <!-- No order — offer to create one or change status -->
       <div style="text-align:center;padding:1rem 0">
         <p style="color:var(--text-muted);font-size:var(--text-sm);margin-bottom:1rem">This table has no active order</p>
-        ${t.status === 'available' ? `
-          <button class="btn btn-primary w-full" onclick="closeModal('table-modal'); openNewOrderModalForTable(${t.id})">${icons.plus} Create Order for Table ${t.number}</button>
-        ` : ''}
+        <button class="btn btn-primary w-full" onclick="closeModal('table-modal'); openNewOrderModalForTable(${t.id})">${icons.plus} Create Order for Table ${t.number}</button>
       </div>
     `}
 
@@ -527,7 +527,104 @@ function openTableModal(tableId) {
     </div>
   `;
 
+  document.getElementById('table-modal-footer').innerHTML = `
+    <button class="btn btn-outline btn-sm" onclick="openEditTableModal(${t.id})">${icons.edit || 'Edit'}</button>
+    <button class="btn btn-danger btn-sm" onclick="deleteTable(${t.id})">${icons.trash || 'Delete'}</button>
+    <button class="btn btn-outline" onclick="closeModal('table-modal')">Close</button>
+  `;
+
   openModal('table-modal');
+}
+
+// ── Table create / edit / delete ────────────────────────────────────────────
+function tableFormModal() {
+  return `
+    <div id="table-form-modal" class="modal-overlay hidden">
+      <div class="modal">
+        <div class="modal-header">
+          <div class="modal-title" id="table-form-title">Add Table</div>
+          <button class="modal-close" onclick="closeModal('table-form-modal')">✕</button>
+        </div>
+        <div class="modal-body" id="table-form-body"></div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closeModal('table-form-modal')">Cancel</button>
+          <button class="btn btn-primary" onclick="saveTableForm()">Save</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function buildTableForm(t) {
+  return `
+    <input type="hidden" id="table-form-id" value="${t?.id || ''}">
+    <div class="form-grid-2">
+      <div class="form-group">
+        <label class="form-label">Table Number *</label>
+        <input class="form-input" id="table-form-number" type="number" min="1" value="${t?.number ?? ''}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Capacity *</label>
+        <input class="form-input" id="table-form-capacity" type="number" min="1" value="${t?.capacity ?? 4}">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes (optional)</label>
+      <textarea class="form-textarea" id="table-form-notes" placeholder="e.g. near window, wheelchair accessible">${t?.notes || ''}</textarea>
+    </div>
+  `;
+}
+
+function openAddTableModal() {
+  document.getElementById('table-form-title').textContent = 'Add Table';
+  document.getElementById('table-form-body').innerHTML = buildTableForm();
+  openModal('table-form-modal');
+}
+
+function openEditTableModal(tableId) {
+  const t = STATE.tables.find(t => t.id === tableId);
+  if (!t) return;
+  document.getElementById('table-form-title').textContent = `Edit Table ${t.number}`;
+  document.getElementById('table-form-body').innerHTML = buildTableForm(t);
+  closeModal('table-modal');
+  openModal('table-form-modal');
+}
+
+async function saveTableForm() {
+  const id       = document.getElementById('table-form-id')?.value;
+  const number   = document.getElementById('table-form-number')?.value;
+  const capacity = document.getElementById('table-form-capacity')?.value;
+  const notes    = document.getElementById('table-form-notes')?.value || '';
+  if (!number || parseInt(number) <= 0)   { toast('Table number is required', 'error'); return; }
+  if (!capacity || parseInt(capacity) <= 0) { toast('Capacity must be a positive number', 'error'); return; }
+  const body = { number: parseInt(number), capacity: parseInt(capacity), notes };
+  try {
+    if (id) await api.patch(`/orders/tables/${id}/`, body);
+    else    await api.post('/orders/tables/', body);
+    const tables = await api.get('/orders/tables/');
+    STATE.tables = tables.results ?? tables;
+    closeModal('table-form-modal');
+    renderTablesOrders();
+    toast(id ? 'Table updated' : 'Table added');
+  } catch (e) {
+    toast(id ? 'Failed to update table' : 'Failed to add table', 'error');
+  }
+}
+
+async function deleteTable(tableId) {
+  const t = STATE.tables.find(t => t.id === tableId);
+  if (!t) return;
+  if (t.status === 'occupied') { toast('Cannot delete a table with an active order', 'error'); return; }
+  if (!confirm(`Delete Table ${t.number}? This cannot be undone.`)) return;
+  try {
+    await api.delete(`/orders/tables/${tableId}/`);
+    STATE.tables = STATE.tables.filter(x => x.id !== tableId);
+    closeModal('table-modal');
+    renderTablesOrders();
+    toast('Table deleted');
+  } catch (e) {
+    toast('Failed to delete table', 'error');
+  }
 }
 
 async function updateItemStatusAndRefreshModal(orderId, itemId, status, tableId) {
@@ -551,23 +648,15 @@ async function completeOrderFromModal(orderId) {
     toast(`Kitchen hasn't finished yet: ${names}`, 'error');
     return;
   }
-   try {
+  try {
     await api.patch(`/orders/orders/${orderId}/complete/`);
-    const [orders, tables] = await Promise.all([
-      api.get('/orders/orders/'),
-      api.get('/orders/tables/'),
-    ]);
+    const [orders, tables] = await Promise.all([api.get('/orders/orders/'), api.get('/orders/tables/')]);
     STATE.orders = orders.results ?? orders;
     STATE.tables = tables.results ?? tables;
     closeModal('table-modal');
-    renderTablesOrders();
-    toast('Order completed!');
-  } catch(e) {
-    try {
-      const err = JSON.parse(e.message);
-      toast(err.error || 'Failed to complete order', 'error');
-    } catch { toast('Failed to complete order', 'error'); }
-  }
+    renderManagerView();
+    toast('Order completed — sent to cashier!');
+  } catch { toast('Failed to complete order', 'error'); }
 }
 
 async function cancelOrderFromModal(orderId) {
@@ -602,7 +691,6 @@ async function refreshTablesOrders() {
 }
 
 function renderOrderCard(o) {
-  const allServed = (o.items||[]).every(i => ['ready','served'].includes(i.status));
   return `
     <div class="order-card">
       <div class="order-card-header">
@@ -625,14 +713,8 @@ function renderOrderCard(o) {
           </div>
         `).join('')}
         <div class="order-total"><span>Total</span><span>NRs ${parseFloat(o.total).toFixed(2)}</span></div>
-
-
         <div class="order-actions">
-          <button class="btn w-full ${allServed ? 'btn-primary' : 'btn-outline'}"
-            onclick="completeOrder(${o.id})"
-            ${!allServed ? 'title="All items must be ready or served first"' : ''}>
-            ${icons.check} Complete Order
-          </button>
+          <button class="btn btn-primary w-full" onclick="completeOrder(${o.id})">${icons.check} Complete</button>
           <button class="btn btn-danger btn-sm" onclick="cancelOrder(${o.id})">${icons.x}</button>
         </div>
       </div>
@@ -791,22 +873,13 @@ async function completeOrder(orderId) {
   }
   try {
     await api.patch(`/orders/orders/${orderId}/complete/`);
-    const [orders, tables] = await Promise.all([
-      api.get('/orders/orders/'),
-      api.get('/orders/tables/'),
-    ]);
+    const [orders, tables] = await Promise.all([api.get('/orders/orders/'), api.get('/orders/tables/')]);
     STATE.orders = orders.results ?? orders;
     STATE.tables = tables.results ?? tables;
-    renderTablesOrders();
-    toast('Order completed!');
-  } catch(e) {
-    try {
-      const err = JSON.parse(e.message);
-      toast(err.error || 'Failed to complete order', 'error');
-    } catch { toast('Failed to complete order', 'error'); }
-  }
+    renderManagerView();
+    toast('Order completed — sent to cashier!');
+  } catch { toast('Failed to complete order', 'error'); }
 }
-
 
 async function cancelOrder(orderId) {
   try {
@@ -824,11 +897,10 @@ async function cancelOrder(orderId) {
 // ── Menu Page ─────────────────────────────────────────────────────────────────
 function renderMenu() {
   const categories = [...new Set(STATE.menuItems.map(m => m.category_name))].filter(Boolean);
-
   setInner(`
     <div class="page-header">
-      <div><h1>Menu</h1></div>
-      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+      <div><h1>Menu</h1><p></p></div>
+      <div style="display:flex;gap:0.5rem;align-items:center">
         <input class="form-input" id="admin-menu-search"
           placeholder="🔍 Search menu items..."
           oninput="adminFilterMenu(this.value)"
@@ -837,100 +909,39 @@ function renderMenu() {
         <button class="btn btn-primary" onclick="openMenuModal()">${icons.plus} Add Item</button>
       </div>
     </div>
-
-    <!-- Category filter tabs -->
-    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1.5rem">
-      <button class="menu-cat-btn active" onclick="filterMenuCategory('all', this)">
-        All <span class="badge badge-orange" style="margin-left:0.25rem">${STATE.menuItems.length}</span>
-      </button>
-      ${categories.map(cat => {
-        const count = STATE.menuItems.filter(m => m.category_name === cat).length;
-        return `
-          <button class="menu-cat-btn" onclick="filterMenuCategory('${cat}', this)">
-            ${cat} <span class="badge badge-gray" style="margin-left:0.25rem">${count}</span>
-          </button>
-        `;
-      }).join('')}
-    </div>
-
     <div id="admin-menu-categories">
-      ${STATE.menuItems.length === 0
-        ? '<div class="empty-state"><p>No menu items yet</p></div>'
-        : categories.map(cat => {
-            const items = STATE.menuItems.filter(m => m.category_name === cat);
-            return `
-              <div class="menu-category" data-cat="${cat}">
-                <h2>${cat}</h2>
-                <div class="menu-grid">
-                  ${items.map(item => `
-                    <div class="menu-item-card" data-name="${item.name.toLowerCase()}" data-cat="${cat}">
-                      ${item.image ? `<img src="${item.image}" style="width:100%;height:140px;object-fit:cover;border-radius:var(--radius) var(--radius) 0 0" onerror="this.style.display='none'">` : ''}
-                      <div class="menu-item-top">
-                        <div class="menu-item-name">${item.name}</div>
-                        <span class="badge ${item.available ? 'badge-green' : 'badge-gray'} clickable-badge" onclick="toggleMenuItem(${item.id})">${item.available ? 'Available' : 'Off'}</span>
-                      </div>
-                      <div class="menu-item-desc">${item.description || ''}</div>
-                      <div class="menu-item-bottom">
-                        <div class="menu-item-price">NRs ${parseFloat(item.price).toFixed(2)}</div>
-                        <div class="menu-item-actions">
-                          <button class="icon-btn" onclick="openMenuModal(${item.id})" title="Edit">${icons.edit}</button>
-                          <button class="icon-btn" onclick="deleteMenuItem(${item.id})" title="Delete">${icons.trash}</button>
-                        </div>
-                      </div>
+    ${STATE.menuItems.length === 0 ? '<div class="empty-state"><p>No menu items yet</p></div>' :
+      categories.map(cat => {
+        const items = STATE.menuItems.filter(m => m.category_name === cat);
+        return `
+          <div class="menu-category" data-cat="${cat}">
+            <h2>${cat}</h2>
+            <div class="menu-grid">
+              ${items.map(item => `
+                <div class="menu-item-card" data-name="${item.name.toLowerCase()}">
+                  ${item.image ? `<img src="${item.image}" style="width:100%;height:140px;object-fit:cover;border-radius:var(--radius) var(--radius) 0 0" onerror="this.style.display='none'">` : ''}
+                  <div class="menu-item-top">
+                    <div class="menu-item-name">${item.name}</div>
+                    <span class="badge ${item.available ? 'badge-green' : 'badge-gray'} clickable-badge" onclick="toggleMenuItem(${item.id})"> ${item.available ? 'Available' : 'Off'} </span>
+                  </div>
+                  <div class="menu-item-desc">${item.description || ''}</div>
+                  <div class="menu-item-bottom">
+                    <div class="menu-item-price">NRs ${parseFloat(item.price).toFixed(2)}</div>
+                    <div class="menu-item-actions">
+                      <button class="icon-btn" onclick="openMenuModal(${item.id})" title="Edit">${icons.edit}</button>
+                      <button class="icon-btn" onclick="deleteMenuItem(${item.id})" title="Delete">${icons.trash}</button>
                     </div>
-                  `).join('')}
+                  </div>
                 </div>
-              </div>
-            `;
-          }).join('')
-      }
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }).join('')
+    }
     </div>
     ${menuFormModal()}
   `);
-}
-
-function filterMenuCategory(cat, btn) {
-  // Update active button
-  document.querySelectorAll('.menu-cat-btn').forEach(b => {
-    b.classList.remove('active');
-    b.querySelector('.badge')?.classList.replace('badge-orange', 'badge-gray');
-  });
-  btn.classList.add('active');
-  btn.querySelector('.badge')?.classList.replace('badge-gray', 'badge-orange');
-
-  // Show/hide sections
-  document.querySelectorAll('.menu-category').forEach(section => {
-    if (cat === 'all') {
-      section.style.display = '';
-    } else {
-      section.style.display = section.getAttribute('data-cat') === cat ? '' : 'none';
-    }
-  });
-
-  // Clear search when switching category
-  const searchEl = document.getElementById('admin-menu-search');
-  if (searchEl) searchEl.value = '';
-}
-
-function adminFilterMenu(query) {
-  const q = query.toLowerCase().trim();
-
-  // Reset category filter to all when searching
-  if (q) {
-    document.querySelectorAll('.menu-cat-btn').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.menu-category').forEach(s => s.style.display = '');
-  }
-
-  document.querySelectorAll('#admin-menu-categories .menu-category').forEach(section => {
-    let anyVisible = false;
-    section.querySelectorAll('.menu-item-card').forEach(card => {
-      const name = card.getAttribute('data-name') || '';
-      const show = !q || name.includes(q);
-      card.style.display = show ? '' : 'none';
-      if (show) anyVisible = true;
-    });
-    section.style.display = anyVisible ? '' : 'none';
-  });
 }
 
 function adminFilterMenu(query) {
@@ -1736,7 +1747,7 @@ function cashierTakeawayTab(activeTakeaways) {
                   <!-- Cashier actions only -->
                   <div style="display:flex;flex-direction:column;gap:0.4rem;margin-top:0.5rem">
                     ${t.status === 'ready' ? `
-                      <button class="btn btn-primary w-full" onclick="takeawayPickedUp(${t.id},${t.is_paid})">
+                      <button class="btn btn-primary w-full" onclick="takeawayPickedUp(${t.id},${t.is_paid})" style="text-align:center">
                          Mark Picked Up
                       </button>
                     ` : ''}
@@ -2020,7 +2031,7 @@ function buildReservationForm(r) {
         <label class="form-label">Table (optional)</label>
         <select class="form-select" id="resv-table">
           <option value="">Auto-assign</option>
-          ${(STATE.tables||[]).map(t => `<option value="${t.id}" ${r?.table === t.id ? 'selected':''}>Table ${t.number} (${t.capacity} seats)</option>`).join('')}
+          ${(STATE.tables||[]).filter(t => t.status === 'available' || r?.table === t.id).map(t => `<option value="${t.id}" ${r?.table === t.id ? 'selected':''}>Table ${t.number} (${t.capacity} seats)</option>`).join('')}
         </select>
       </div>
     </div>
