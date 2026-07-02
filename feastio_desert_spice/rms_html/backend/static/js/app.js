@@ -1757,17 +1757,17 @@ function cashierTakeawayTab(activeTakeaways) {
                   <!-- Cashier actions only -->
                   <div style="display:flex;flex-direction:column;gap:0.4rem;margin-top:0.5rem">
                     ${t.status === 'ready' ? `
-                      <button class="btn btn-primary w-full" onclick="takeawayPickedUp(${t.id},${t.is_paid})" style="text-align:center">
-                         Mark Picked Up
+                      <button class="btn btn-primary w-full" style="justify-content:center" onclick="takeawayPickedUp(${t.id},${t.is_paid})">
+                        Mark Picked Up
                       </button>
                     ` : ''}
                     ${!t.is_paid ? `
-                      <button class="btn btn-outline w-full btn-sm" onclick="takeawayMarkPaid(${t.id})">
-                         Mark Paid
+                      <button class="btn btn-outline w-full btn-sm" style="justify-content:center" onclick="takeawayMarkPaid(${t.id})">
+                        Mark Paid
                       </button>
                     ` : ''}
                     ${t.status !== 'cancelled' ? `
-                      <button class="btn btn-outline w-full btn-sm" style="color:#dc2626;border-color:#dc2626"
+                      <button class="btn btn-outline w-full btn-sm" style="justify-content:center;color:#dc2626;border-color:#dc2626"
                         onclick="takeawaySetStatus(${t.id},'cancelled')">✕ Cancel</button>
                     ` : ''}
                   </div>
