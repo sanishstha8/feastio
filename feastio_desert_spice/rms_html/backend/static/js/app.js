@@ -7,12 +7,22 @@ let STATE = {
 };
 // ── Cross-tab sync ────────────────────────────────────────────────────────────
 const _syncChannel = new BroadcastChannel('feastio_sync');
-_syncChannel.onmessage = (e) => {
+_syncChannel.onmessage = async (e) => {
   if (e.data === 'tables_updated') {
-    if (STATE.user?.role === 'waiter') loadStaffData();
-    else if (STATE.user?.role === 'manager') {
-      loadAllData().then(() => renderTablesOrders());
-    }
+    try {
+      const [tables, orders] = await Promise.all([
+        api.get('/orders/tables/'),
+        api.get('/orders/orders/'),
+      ]);
+      STATE.tables = tables.results ?? tables;
+      STATE.orders = orders.results ?? orders;
+      if (STATE.user?.role === 'waiter') renderWaiterView();
+      else if (STATE.user?.role === 'manager') {
+        const activeNav = document.querySelector('.nav-item.active');
+        if (activeNav?.textContent.includes('Tables')) renderTablesOrders();
+        else if (activeNav?.textContent.includes('Dashboard')) renderDashboard();
+      }
+    } catch {}
   }
 };
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -2042,9 +2052,13 @@ function buildReservationForm(r) {
   `;
 }
 
-function openReservationModal() {
-  document.getElementById('resv-modal-title').textContent = 'New Reservation';
-  document.getElementById('reservation-modal-body').innerHTML = buildReservationForm();
+async function openReservationModal(r = null) {
+  // Always fetch fresh tables before opening so newly added tables appear
+  try {
+    const data = await api.get('/orders/tables/');
+    STATE.tables = data.results ?? data;
+  } catch {}
+  document.getElementById('reservation-modal-body').innerHTML = buildReservationForm(r);
   openModal('reservation-modal');
 }
 
@@ -2089,7 +2103,12 @@ async function submitReservation() {
       // Refresh tables so admin/waiter see the reserved table
       const tables = await api.get('/orders/tables/');
       STATE.tables = tables.results ?? tables;
+      // Notify other tabs via BroadcastChannel
       try { _syncChannel.postMessage('tables_updated'); } catch(e) {}
+      // If manager is on the same tab (cashier portal inside manager shell), re-render tables
+      if (STATE.user?.role === 'manager') {
+        renderTablesOrders();
+      }
       loadCashierData();
       return;
     }
@@ -2106,10 +2125,15 @@ async function resvSetStatus(id, newStatus) {
   try {
     await api.patch('/orders/reservations/'+id+'/set-status/', { status: newStatus });
 
-const tables = await api.get('/orders/tables/');
+    const tables = await api.get('/orders/tables/');
     STATE.tables = tables.results ?? tables;
+    // Notify other tabs
     try { _syncChannel.postMessage('tables_updated'); } catch(e) {}
-
+    // Re-render manager tables if on manager portal
+    if (STATE.user?.role === 'manager') {
+      const activeNav = document.querySelector('.nav-item.active');
+      if (activeNav?.textContent.includes('Tables')) renderTablesOrders();
+    }
     toast('Reservation updated!');
     loadCashierData();
   } catch { toast('Failed to update reservation', 'error'); }
